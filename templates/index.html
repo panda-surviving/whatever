@@ -1,0 +1,1882 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#FAF7F0">
+  <title>Yalvon360 — PSX Portfolio Intelligence</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div id="globalTickerBar" class="global-ticker-bar"></div>
+
+<header class="topnav">
+  <div class="topnav-inner">
+
+    <button id="navToggle" class="nav-toggle" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+
+    <div class="brand" data-page-link="dashboard">
+      <span class="brand-mark">
+        <img src="{{ url_for('static', filename='images/yalvon360-logo.png') }}" alt="Yalvon360">
+      </span>
+      <span class="brand-tagline">PSX portfolio, market research &amp; stock discovery</span>
+    </div>
+
+    <nav id="topNavLinks" class="topnav-links">
+      <div class="nav-group">
+        <span class="nav-group-label">Overview</span>
+        <button class="nav active" data-page="dashboard">Dashboard</button>
+        <button class="nav" data-page="portfolio">Portfolio</button>
+        <button class="nav" data-page="watchlist">Watchlist</button>
+        <button class="nav" data-page="transactions">Transactions</button>
+        <button class="nav" data-page="screener">Screener</button>
+        <button class="nav" data-page="psxdivergence">Divergence Screener</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">Markets</span>
+        <button class="nav" data-page="market">Markets</button>
+        <button class="nav" data-page="stocks">All PSX Stocks</button>
+        <button class="nav" data-page="mutualfunds">Mutual Funds</button>
+        <button class="nav" data-page="crypto">Crypto</button>
+        <button class="nav" data-page="forex">Forex</button>
+        <button class="nav" data-page="commodities">Commodities</button>
+        <button class="nav" data-page="sentiment">Fear &amp; Greed</button>
+        <button class="nav" data-page="sectors">Sectors</button>
+        <button class="nav" data-page="forextech">Forex Technicals</button>
+        <button class="nav" data-page="cryptotech">Crypto Technicals</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">Research</span>
+        <button class="nav" data-page="macro">Macro</button>
+        <button class="nav" data-page="news">News</button>
+        <button class="nav" data-page="journal">Journal</button>
+        <button class="nav" data-page="tools">Tools</button>
+        <button class="nav" data-page="worldclock">World Clock</button>
+      </div>
+    </nav>
+
+    <div class="topnav-actions">
+      <button id="headerSearchBtn" class="icon-only-btn" title="Search PSX symbols">🔍</button>
+      <button id="globalStatus" class="status-pill status-pill-button">Connecting…</button>
+      <button id="addBtn" class="primary">+ Add Transaction</button>
+    </div>
+
+  </div>
+
+  <div id="headerSearchBar" class="header-search-bar hidden">
+    <input id="headerSearchInput" class="search" type="text" placeholder="Search PSX symbol or company, e.g. FFC or Fauji...">
+    <div id="headerSearchResults" class="header-search-results"></div>
+  </div>
+
+</header>
+
+
+
+<main class="main">
+
+  <div id="premarketBanner" class="premarket-banner hidden">
+    <div class="premarket-banner-inner">
+      <span class="premarket-icon">⚠</span>
+      <div>
+        <strong id="premarketTitle">Overnight markets pointing lower</strong>
+        <p id="premarketDetail"></p>
+      </div>
+      <button id="premarketDismiss" class="icon-button">×</button>
+    </div>
+  </div>
+
+  <div class="page-heading">
+    <div>
+      <h1 id="pageTitle">Dashboard</h1>
+      <p id="pageSubtitle">Your Pakistan equity portfolio</p>
+    </div>
+  </div>
+
+
+  <section id="dashboard" class="page active">
+
+    <div class="section-head">
+      <h3>Today Across All Markets</h3>
+      <p>PSX indices and major world markets, at a glance.</p>
+    </div>
+
+    <div class="market-group-label">🇵🇰 PSX Indices</div>
+    <div id="dashIndexCards" class="index-card-row"></div>
+
+    <div class="market-group-label">🌍 World Markets</div>
+    <div id="dashWorldMarketCards" class="multi-market-grid dash-world-cards"></div>
+
+
+    <div class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">YALVON360</span>
+        <h2>Welcome back — here's your market pulse.</h2>
+
+        <div class="hero-actions">
+          <button class="primary" data-page-link="stocks">Explore PSX</button>
+          <button class="ghost-light" data-page-link="portfolio">Open Portfolio</button>
+        </div>
+      </div>
+
+      <div class="hero-index">
+        <span>KSE-100</span>
+        <strong id="dashKse">181,430.02</strong>
+        <small id="dashKseChange" class="negative">▼ 0.19%</small>
+        <div id="heroSparkline" class="sparkline"></div>
+      </div>
+    </div>
+
+
+    <div class="section-head">
+      <h3>Sentiment By Market</h3>
+      <p>How each asset class is feeling right now.</p>
+    </div>
+    <div class="grid two lower">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>PSX</h3>
+            <p>Fear &amp; Greed</p>
+          </div>
+          <button class="link" data-page-link="sentiment">Details</button>
+        </div>
+        <div class="sentiment-ring mini-sentiment-ring" id="dashSentimentRing">
+          <strong id="dashSentimentScore">—</strong>
+        </div>
+        <p class="mini-sentiment-label" id="dashSentimentLabel">Loading…</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Crypto, Forex &amp; Commodities</h3>
+            <p>Non-equity sentiment</p>
+          </div>
+        </div>
+        <div id="dashSentimentByMarket" class="three-ring-row"></div>
+      </div>
+    </div>
+
+
+    <div class="portfolio-summary-container">
+      <div class="portfolio-summary-header">
+        <h3>Your Portfolio</h3>
+        <button class="link" data-page-link="portfolio">Open full Portfolio →</button>
+      </div>
+      <div class="cards three">
+        <div class="card stat accent-card accent-gold">
+          <small>Portfolio Value</small>
+          <strong id="value">PKR 0</strong>
+          <span>Current value</span>
+        </div>
+
+        <div class="card stat accent-card accent-teal">
+          <small>Total Invested</small>
+          <strong id="invested">PKR 0</strong>
+          <span>Cost basis</span>
+        </div>
+
+        <div class="card stat accent-card accent-rose">
+          <small>Total P/L</small>
+          <strong id="pl">PKR 0</strong>
+          <span id="plPct">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="directory-stat-row">
+      <div class="card stat accent-card accent-sky">
+        <small>PSX Directory</small>
+        <strong id="directoryCount">—</strong>
+        <span>Listed equity-style symbols</span>
+      </div>
+    </div>
+
+
+    <div class="grid two">
+      <div class="card chart-card">
+        <div class="card-head">
+          <div>
+            <h3>Portfolio Trend</h3>
+            <p>Value vs. amount invested — hover any point for details</p>
+          </div>
+          <div id="dashPeriodBtns" class="period-btn-row"></div>
+        </div>
+        <div id="dashboardPnlChart" class="big-chart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Allocation</h3>
+            <p>Portfolio weights</p>
+          </div>
+        </div>
+        <div id="allocation"></div>
+      </div>
+    </div>
+
+
+    <div class="grid three lower">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Top Holdings</h3>
+            <p>Largest positions</p>
+          </div>
+          <button class="link" data-page-link="portfolio">View all</button>
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Value</th>
+                <th>P/L</th>
+              </tr>
+            </thead>
+            <tbody id="topHoldings"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Market Snapshot</h3>
+            <p>Tracked snapshot</p>
+          </div>
+        </div>
+
+        <div class="snapshot">
+          <div><span>Advancers</span><b id="dashAdvancers">—</b></div>
+          <div><span>Decliners</span><b id="dashDecliners">—</b></div>
+          <div><span>Top Gainer</span><b id="dashTopGainer">—</b></div>
+          <div><span>Most Active</span><b id="dashMostActive">—</b></div>
+          <div><span>New Highs</span><b id="dashNewHighs">—</b></div>
+          <div><span>New Lows</span><b id="dashNewLows">—</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Quick Add to Watchlist</h3>
+            <p>Any PSX symbol</p>
+          </div>
+          <button class="link" data-page-link="watchlist">Open Watchlist</button>
+        </div>
+        <div class="quick-add-row">
+          <input id="dashQuickAddSymbol" class="search" type="text" placeholder="e.g. FFC">
+          <button class="secondary" id="dashQuickAddBtn">+ Add</button>
+        </div>
+        <p id="dashQuickAddResult" class="muted-note"></p>
+      </div>
+    </div>
+
+
+    <div class="section-head">
+      <h3>Your Watchlist</h3>
+      <p>Same order as the main Watchlist page — scrolls if it's long.</p>
+    </div>
+    <div class="card dash-watchlist-card">
+      <div id="dashWatchlistBox" class="dash-watchlist-scroll"></div>
+    </div>
+
+
+    <div class="grid two lower">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Sector Performance</h3>
+            <p>Momentum by sector</p>
+          </div>
+          <button class="link" data-page-link="sectors">View all</button>
+        </div>
+        <div id="dashSectorStrip"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Pakistan Macro</h3>
+            <p>Key economic indicators</p>
+          </div>
+          <button class="link" data-page-link="macro">View all</button>
+        </div>
+        <div id="dashMacroStrip" class="macro-strip"></div>
+      </div>
+    </div>
+
+
+    <div class="section-head">
+      <h3>Major Forex, Top Funds &amp; Commodities</h3>
+      <p>A quick cross-asset pulse, all live.</p>
+    </div>
+
+    <div class="grid three lower">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Major Forex</h3>
+            <p id="dashForexSource" class="muted-note">Loading…</p>
+          </div>
+          <button class="link" data-page-link="forex">View all</button>
+        </div>
+        <div id="dashForexStrip"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Top Mutual Funds</h3>
+            <p>By AUM</p>
+          </div>
+          <button class="link" data-page-link="mutualfunds">View all</button>
+        </div>
+        <div id="dashFundsStrip"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Commodities</h3>
+            <p>Metals &amp; energy</p>
+          </div>
+          <button class="link" data-page-link="commodities">View all</button>
+        </div>
+        <div id="dashCommoditiesStrip"></div>
+      </div>
+    </div>
+
+
+
+    <div class="section-head dash-extended-header">
+      <h3>📊 Complete Market Detail</h3>
+      <p>Everything from the Markets tab, expanded here too — cross-asset signals, fund flows, insider activity, seasonality and more.</p>
+    </div>
+
+    <!-- Today Across All Markets (detailed) -->
+    <div class="market-grid-hero">
+      <div class="card risk-sentiment-card">
+        <small>RISK SENTIMENT</small>
+        <strong id="riskSentimentLabelHome">—</strong>
+        <p id="riskSentimentNoteHome" class="muted-note"></p>
+        <div class="sentiment-ring risk-ring" id="riskSentimentRingHome"><strong id="riskSentimentScoreHome">—</strong></div>
+        <div class="risk-scale"><span>Risk-Off</span><span>Risk-On</span></div>
+      </div>
+      <div id="multiMarketCardsHome" class="multi-market-grid"></div>
+    </div>
+    <p id="liveDataNoticeHome" class="muted-note live-data-notice hidden">
+      Showing development values. Set the <code>MARKET_DATA_API_KEY</code> environment variable
+      (see README) to pull these from a live vendor feed instead.
+    </p>
+
+    <!-- Cross-Asset Signals -->
+    <div class="section-head">
+      <h3>Cross-Asset Signals</h3>
+      <p>Directional reads across asset classes, based on today's moves.</p>
+    </div>
+    <div id="crossAssetSignalsHome" class="cross-signal-grid"></div>
+
+    <!-- What's Moving -->
+    <div class="section-head">
+      <h3>What's Moving The Stock Markets</h3>
+      <p>Pakistan market snapshot.</p>
+    </div>
+
+    <div id="marketIndexCardsHome" class="index-card-row"></div>
+
+    <div class="market-summary">
+      <div class="market-index card">
+        <small>KSE-100 INDEX</small>
+        <strong id="kse100PriceHome">—</strong>
+        <span id="kse100ChangeHome">—</span>
+        <div id="indexChartHome" class="mini-chart"></div>
+      </div>
+
+      <div class="card stat">
+        <small>Advancers</small>
+        <strong id="marketAdvancersHome" class="positive">—</strong>
+        <span>Tracked snapshot</span>
+      </div>
+
+      <div class="card stat">
+        <small>Decliners</small>
+        <strong id="marketDeclinersHome" class="negative">—</strong>
+        <span>Tracked snapshot</span>
+      </div>
+
+      <div class="card stat">
+        <small>All PSX Stocks</small>
+        <strong id="marketDirectoryCountHome">—</strong>
+        <span>Full directory</span>
+      </div>
+    </div>
+
+    <div class="mover-grid">
+      <div class="card">
+        <div class="card-head">
+          <h3>Top Gainers</h3>
+          <span class="positive">▲</span>
+        </div>
+        <div id="topGainersHome"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Top Losers</h3>
+          <span class="negative">▼</span>
+        </div>
+        <div id="topLosersHome"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Most Active</h3>
+          <span>Volume</span>
+        </div>
+        <div id="mostActiveHome"></div>
+      </div>
+    </div>
+
+    <!-- Cross-Asset Highlights -->
+    <div class="section-head">
+      <h3>Cross-Asset Highlights</h3>
+      <p>Crypto, forex and commodities at a glance.</p>
+    </div>
+    <div id="crossAssetHighlightsHome" class="cross-highlight-grid"></div>
+
+    <!-- Trending Stocks -->
+    <div class="section-head">
+      <h3>Trending Stocks <span id="trendingWindowHome" class="soft-chip"></span></h3>
+      <p>Pakistan's largest companies, ranked by their move over the selected window.</p>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h3 class="positive-title">Top Gainers</h3></div>
+        <div id="trendingGainersHome"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3 class="negative-title">Top Losers</h3></div>
+        <div id="trendingLosersHome"></div>
+      </div>
+    </div>
+
+    <!-- 52 Week Highs / Lows -->
+    <div class="section-head">
+      <h3>Stocks Hitting a 52-Week High or Low Today</h3>
+      <p>Left: stocks that reached a new 52-week HIGH today. Right: stocks that reached a new 52-week LOW today.</p>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h3 class="positive-title">New Highs</h3></div>
+        <div id="week52HighsHome"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3 class="negative-title">New Lows</h3></div>
+        <div id="week52LowsHome"></div>
+      </div>
+    </div>
+
+    <!-- Who is buying -->
+    <div class="section-head">
+      <h3>Who Is Buying Pakistan</h3>
+      <p>Who bought and sold what on PSX, by investor type and sector.</p>
+    </div>
+    <div class="card">
+      <div id="fundFlowsSummaryHome" class="fund-flow-summary"></div>
+      <div class="table-scroll">
+        <table class="flow-matrix">
+          <thead>
+            <tr>
+              <th>Sector \ Investor</th>
+              <th>Foreign</th><th>Individuals</th><th>Mut. Funds</th>
+              <th>Banks/DFI</th><th>Companies</th><th>Brokers</th><th>Insurance</th><th>Other</th>
+            </tr>
+          </thead>
+          <tbody id="fundFlowsMatrixHome"></tbody>
+        </table>
+      </div>
+      <div id="fundFlowsChartHome" class="mini-bar-chart"></div>
+    </div>
+
+    <!-- Insider activity -->
+    <div class="section-head">
+      <h3>What Insiders Are Doing</h3>
+      <p>Directors and sponsors trades disclosed to PSX, ranked by filing value.</p>
+    </div>
+    <div class="card">
+      <p id="insiderNoteHome" class="muted-note banner-note"></p>
+      <div class="grid two">
+        <div>
+          <div class="card-head"><h3 class="positive-title">Top Insider Buying</h3></div>
+          <div id="insiderBuyingHome"></div>
+        </div>
+        <div>
+          <div class="card-head"><h3 class="negative-title">Top Insider Selling</h3></div>
+          <div id="insiderSellingHome"></div>
+        </div>
+      </div>
+      <div id="insiderMonthlyChartHome" class="mini-bar-chart"></div>
+    </div>
+
+    <!-- Market sentiment -->
+    <div class="section-head">
+      <h3>Market Sentiment</h3>
+      <p>KSE-100 market internals rolled into one Fear to Greed reading.</p>
+    </div>
+    <div class="grid two">
+      <div class="card sentiment-history-card">
+        <div class="sentiment-ring large-sentiment-ring" id="mktSentimentRingHome"><strong id="mktSentimentScoreHome">—</strong></div>
+        <div id="sentimentHistoryListHome" class="sentiment-history-list"></div>
+      </div>
+      <div class="card">
+        <p id="sentimentReadTextHome" class="muted-note"></p>
+        <div class="card-head"><h3>Broad Decline / Advance</h3></div>
+        <div id="breadthBarHome" class="breadth-bar"></div>
+      </div>
+    </div>
+
+    <!-- Non-equity sentiment -->
+    <div class="section-head">
+      <h3>Non-Equity Sentiment And Breadth</h3>
+      <p>Sentiment and how broad today's moves are across crypto, forex and commodities.</p>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h3>Sentiment By Class</h3></div>
+        <div id="nonEquitySentimentHome" class="three-ring-row"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Breadth Pulse By Class</h3></div>
+        <div id="breadthPulseHome"></div>
+      </div>
+    </div>
+
+    <!-- Top stocks three ways -->
+    <div class="section-head">
+      <h3>Top Stocks, Three Ways</h3>
+      <p>The same market through three lenses: our investors, our scores, and the professional funds.</p>
+    </div>
+    <div class="grid three">
+      <div class="card">
+        <div class="card-head"><h3>Investor Favorites</h3></div>
+        <div id="topStocksFavoritesHome"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Fundamentals360 Top Scores</h3></div>
+        <div id="topStocksFundamentalsHome"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Held By Mutual Funds</h3></div>
+        <div id="topStocksFundHoldingsHome"></div>
+      </div>
+    </div>
+
+    <!-- Levels to play -->
+    <div class="section-head">
+      <h3>Levels To Play</h3>
+      <p>Stocks at the price that decides their next move.</p>
+    </div>
+    <div class="card">
+      <div id="levelsSummaryHome" class="levels-summary-bar"></div>
+      <div id="levelsStocksHome"></div>
+    </div>
+
+    <!-- Seasonality -->
+    <div class="section-head">
+      <h3>Seasonality In Play</h3>
+      <p>How each month has treated the market, and the stocks that own this one.</p>
+    </div>
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="seasonalityHeadHome"></tr></thead>
+          <tbody><tr id="seasonalityRowHome"></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Top Seasonal Stocks</h3></div>
+      <div id="seasonalStocksHome"></div>
+    </div>
+
+    <!-- Pakistan profile -->
+    <div class="section-head">
+      <h3>Pakistan Profile</h3>
+      <p>The macro picture every PSX investor watches, in one glance.</p>
+    </div>
+    <div id="pakistanProfileCardsHome" class="cards four"></div>
+
+    <!-- News / announcements / payouts -->
+    <div class="section-head">
+      <h3>Everything Happening In The Market</h3>
+    </div>
+    <div class="grid three">
+      <div class="card">
+        <div class="card-head"><h3>Latest News</h3></div>
+        <div id="marketNewsListHome"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Company Announcements</h3></div>
+        <div id="marketAnnouncementListHome"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Upcoming Payouts</h3></div>
+        <div id="upcomingPayoutsHome"></div>
+      </div>
+    </div>
+
+    <!-- Calendar -->
+    <div class="section-head">
+      <h3>Coming Up In Pakistan</h3>
+      <p>Country-wide dates that move the market.</p>
+    </div>
+    <div id="calendarEventsHome" class="calendar-events-row"></div>
+
+  </section>
+
+
+  <section id="portfolio" class="page">
+
+    <div class="page-intro">
+      <div>
+        <h2>Portfolio</h2>
+        <p>Holdings, current value and day-by-day profit/loss.</p>
+      </div>
+
+      <div class="intro-actions">
+        <button id="recordTodayBtn" class="secondary">● Record Today</button>
+        <button id="exportPortfolioBtn" class="secondary">⇩ Export CSV</button>
+        <button id="importPortfolioBtn" class="secondary">⇧ Import CSV</button>
+        <input id="importPortfolioFile" type="file" accept=".csv" class="hidden">
+        <button id="addBtn2" class="primary">+ Add Transaction</button>
+      </div>
+    </div>
+    <p id="importPortfolioStatus" class="muted-note"></p>
+
+
+    <div class="cards four portfolio-summary">
+      <div class="card stat">
+        <small>Current Value</small>
+        <strong id="portfolioValue">PKR 0</strong>
+        <span>Portfolio market value</span>
+      </div>
+
+      <div class="card stat">
+        <small>Total Invested</small>
+        <strong id="portfolioInvested">PKR 0</strong>
+        <span>Cost basis</span>
+      </div>
+
+      <div class="card stat">
+        <small>Total P/L</small>
+        <strong id="portfolioPnl">PKR 0</strong>
+        <span id="portfolioPnlPct">—</span>
+      </div>
+
+      <div class="card stat">
+        <small>Recorded Days</small>
+        <strong id="recordedDays">0</strong>
+        <span>Calendar history</span>
+      </div>
+    </div>
+
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Holdings</h3>
+          <p>All current positions</p>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Symbol</th>
+              <th>Company</th>
+              <th>Sector</th>
+              <th>Price</th>
+              <th>Trend</th>
+              <th>Qty</th>
+              <th>Avg Cost</th>
+              <th>Invested</th>
+              <th>Value</th>
+              <th>P/L</th>
+              <th>% Profit</th>
+              <th>Since</th>
+              <th></th>
+              <th>Remove</th>
+            </tr>
+          </thead>
+          <tbody id="portfolioTable"></tbody>
+        </table>
+      </div>
+      <div class="stock-toolbar portfolio-sort-row">
+        <select id="portfolioSort" class="select">
+          <option value="manual">Manual order (drag rows to reorder)</option>
+          <option value="pl_desc">P/L (high to low)</option>
+          <option value="pl_asc">P/L (low to high)</option>
+          <option value="pct_desc">% Profit (high to low)</option>
+          <option value="value_desc">Value (high to low)</option>
+        </select>
+      </div>
+    </div>
+
+
+    <div class="grid two portfolio-history-grid">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Profit / Loss History</h3>
+            <p>Hover any point for exact date, value, invested and P/L</p>
+          </div>
+        </div>
+        <div class="pl-mode-toggle">
+          <button class="pl-mode-btn active" data-pl-mode="cumulative">Cumulative</button>
+          <button class="pl-mode-btn" data-pl-mode="daily">Daily</button>
+        </div>
+        <div id="portfolioPeriodBtns" class="period-btn-row"></div>
+        <div id="portfolioPnlChart" class="big-chart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>P/L Calendar</h3>
+            <p>Each day shows daily movement and total P/L</p>
+          </div>
+        </div>
+
+        <div id="portfolioCalendar" class="calendar-grid"></div>
+
+        <div class="calendar-legend">
+          <span><i class="legend-green"></i> Positive day</span>
+          <span><i class="legend-red"></i> Negative day</span>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="info-banner">
+      Yalvon360 records a portfolio snapshot when you open Portfolio or press
+      <b>Record Today</b>. Exact historical P/L before the first recorded snapshot
+      requires historical closing-price data from an authorized market-data source.
+    </div>
+
+  </section>
+
+
+  <section id="watchlist" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Watchlist</h2>
+        <p>Search across every market — stocks, crypto, forex, mutual funds — and add anything to your watchlist.</p>
+      </div>
+    </div>
+
+    <div class="universal-search-box">
+      <input id="watchUniversalSearch" class="search" type="text" placeholder="Search any stock, crypto, forex pair or mutual fund... e.g. type &quot;U&quot;">
+      <div class="universal-search-filters">
+        <button class="usf-btn active" data-usf="all">All</button>
+        <button class="usf-btn" data-usf="stock">Stocks</button>
+        <button class="usf-btn" data-usf="fund">Funds</button>
+        <button class="usf-btn" data-usf="crypto">Crypto</button>
+        <button class="usf-btn" data-usf="forex">Forex</button>
+      </div>
+      <div id="watchUniversalResults" class="universal-search-results"></div>
+    </div>
+
+    <div class="stock-toolbar">
+      <select id="watchSort" class="select">
+        <option value="manual">Manual order</option>
+        <option value="change_desc">Change % (high to low)</option>
+        <option value="change_asc">Change % (low to high)</option>
+        <option value="price_desc">Price (high to low)</option>
+        <option value="name_asc">Name (A–Z)</option>
+      </select>
+      <span id="watchCount" class="count-pill"></span>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Type</th>
+              <th>Symbol</th>
+              <th>Name</th>
+              <th>Price</th>
+              <th>Change %</th>
+              <th>Remove</th>
+            </tr>
+          </thead>
+          <tbody id="watchTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="transactions" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Transactions</h2>
+        <p>Your buy and sell activity.</p>
+      </div>
+      <button class="primary" id="addBtn3">+ Add Transaction</button>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Symbol</th>
+              <th>Type</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="txTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="market" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Market Overview</h2>
+        <p>Pakistan, US &amp; Saudi markets, cross-asset signals, flows and more.</p>
+      </div>
+    </div>
+
+    <!-- Today Across All Markets -->
+    <div class="market-grid-hero">
+      <div class="card risk-sentiment-card">
+        <small>RISK SENTIMENT</small>
+        <strong id="riskSentimentLabel">—</strong>
+        <p id="riskSentimentNote" class="muted-note"></p>
+        <div class="sentiment-ring risk-ring" id="riskSentimentRing"><strong id="riskSentimentScore">—</strong></div>
+        <div class="risk-scale"><span>Risk-Off</span><span>Risk-On</span></div>
+      </div>
+      <div id="multiMarketCards" class="multi-market-grid"></div>
+    </div>
+    <p id="liveDataNotice" class="muted-note live-data-notice hidden">
+      Showing development values. Set the <code>MARKET_DATA_API_KEY</code> environment variable
+      (see README) to pull these from a live vendor feed instead.
+    </p>
+
+    <!-- Cross-Asset Signals -->
+    <div class="section-head">
+      <h3>Cross-Asset Signals</h3>
+      <p>Directional reads across asset classes, based on today's moves.</p>
+    </div>
+    <div id="crossAssetSignals" class="cross-signal-grid"></div>
+
+    <!-- What's Moving -->
+    <div class="section-head">
+      <h3>What's Moving The Stock Markets</h3>
+      <p>Pakistan market snapshot.</p>
+    </div>
+
+    <div id="marketIndexCards" class="index-card-row"></div>
+
+    <div class="market-summary">
+      <div class="market-index card">
+        <small>KSE-100 INDEX</small>
+        <strong id="kse100Price">—</strong>
+        <span id="kse100Change">—</span>
+        <div id="indexChart" class="mini-chart"></div>
+      </div>
+
+      <div class="card stat">
+        <small>Advancers</small>
+        <strong id="marketAdvancers" class="positive">—</strong>
+        <span>Tracked snapshot</span>
+      </div>
+
+      <div class="card stat">
+        <small>Decliners</small>
+        <strong id="marketDecliners" class="negative">—</strong>
+        <span>Tracked snapshot</span>
+      </div>
+
+      <div class="card stat">
+        <small>All PSX Stocks</small>
+        <strong id="marketDirectoryCount">—</strong>
+        <span>Full directory</span>
+      </div>
+    </div>
+
+    <div class="mover-grid">
+      <div class="card">
+        <div class="card-head">
+          <h3>Top Gainers</h3>
+          <span class="positive">▲</span>
+        </div>
+        <div id="topGainers"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Top Losers</h3>
+          <span class="negative">▼</span>
+        </div>
+        <div id="topLosers"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Most Active</h3>
+          <span>Volume</span>
+        </div>
+        <div id="mostActive"></div>
+      </div>
+    </div>
+
+    <!-- Cross-Asset Highlights -->
+    <div class="section-head">
+      <h3>Cross-Asset Highlights</h3>
+      <p>Crypto, forex and commodities at a glance.</p>
+    </div>
+    <div id="crossAssetHighlights" class="cross-highlight-grid"></div>
+
+    <!-- Trending Stocks -->
+    <div class="section-head">
+      <h3>Trending Stocks <span id="trendingWindow" class="soft-chip"></span></h3>
+      <p>Pakistan's largest companies, ranked by their move over the selected window.</p>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h3 class="positive-title">Top Gainers</h3></div>
+        <div id="trendingGainers"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3 class="negative-title">Top Losers</h3></div>
+        <div id="trendingLosers"></div>
+      </div>
+    </div>
+
+    <!-- 52 Week Highs / Lows -->
+    <div class="section-head">
+      <h3>Stocks Hitting a 52-Week High or Low Today</h3>
+      <p>Left: stocks that reached a new 52-week HIGH today. Right: stocks that reached a new 52-week LOW today.</p>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h3 class="positive-title">New Highs</h3></div>
+        <div id="week52Highs"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3 class="negative-title">New Lows</h3></div>
+        <div id="week52Lows"></div>
+      </div>
+    </div>
+
+    <!-- Who is buying -->
+    <div class="section-head">
+      <h3>Who Is Buying Pakistan</h3>
+      <p>Who bought and sold what on PSX, by investor type and sector.</p>
+    </div>
+    <div class="card">
+      <div id="fundFlowsSummary" class="fund-flow-summary"></div>
+      <div class="table-scroll">
+        <table class="flow-matrix">
+          <thead>
+            <tr>
+              <th>Sector \ Investor</th>
+              <th>Foreign</th><th>Individuals</th><th>Mut. Funds</th>
+              <th>Banks/DFI</th><th>Companies</th><th>Brokers</th><th>Insurance</th><th>Other</th>
+            </tr>
+          </thead>
+          <tbody id="fundFlowsMatrix"></tbody>
+        </table>
+      </div>
+      <div id="fundFlowsChart" class="mini-bar-chart"></div>
+    </div>
+
+    <!-- Insider activity -->
+    <div class="section-head">
+      <h3>What Insiders Are Doing</h3>
+      <p>Directors and sponsors trades disclosed to PSX, ranked by filing value.</p>
+    </div>
+    <div class="card">
+      <p id="insiderNote" class="muted-note banner-note"></p>
+      <div class="grid two">
+        <div>
+          <div class="card-head"><h3 class="positive-title">Top Insider Buying</h3></div>
+          <div id="insiderBuying"></div>
+        </div>
+        <div>
+          <div class="card-head"><h3 class="negative-title">Top Insider Selling</h3></div>
+          <div id="insiderSelling"></div>
+        </div>
+      </div>
+      <div id="insiderMonthlyChart" class="mini-bar-chart"></div>
+    </div>
+
+    <!-- Market sentiment -->
+    <div class="section-head">
+      <h3>Market Sentiment</h3>
+      <p>KSE-100 market internals rolled into one Fear to Greed reading.</p>
+    </div>
+    <div class="grid two">
+      <div class="card sentiment-history-card">
+        <div class="sentiment-ring large-sentiment-ring" id="mktSentimentRing"><strong id="mktSentimentScore">—</strong></div>
+        <div id="sentimentHistoryList" class="sentiment-history-list"></div>
+      </div>
+      <div class="card">
+        <p id="sentimentReadText" class="muted-note"></p>
+        <div class="card-head"><h3>Broad Decline / Advance</h3></div>
+        <div id="breadthBar" class="breadth-bar"></div>
+      </div>
+    </div>
+
+    <!-- Non-equity sentiment -->
+    <div class="section-head">
+      <h3>Non-Equity Sentiment And Breadth</h3>
+      <p>Sentiment and how broad today's moves are across crypto, forex and commodities.</p>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h3>Sentiment By Class</h3></div>
+        <div id="nonEquitySentiment" class="three-ring-row"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Breadth Pulse By Class</h3></div>
+        <div id="breadthPulse"></div>
+      </div>
+    </div>
+
+    <!-- Top stocks three ways -->
+    <div class="section-head">
+      <h3>Top Stocks, Three Ways</h3>
+      <p>The same market through three lenses: our investors, our scores, and the professional funds.</p>
+    </div>
+    <div class="grid three">
+      <div class="card">
+        <div class="card-head"><h3>Investor Favorites</h3></div>
+        <div id="topStocksFavorites"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Fundamentals360 Top Scores</h3></div>
+        <div id="topStocksFundamentals"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Held By Mutual Funds</h3></div>
+        <div id="topStocksFundHoldings"></div>
+      </div>
+    </div>
+
+    <!-- Levels to play -->
+    <div class="section-head">
+      <h3>Levels To Play</h3>
+      <p>Stocks at the price that decides their next move.</p>
+    </div>
+    <div class="card">
+      <div id="levelsSummary" class="levels-summary-bar"></div>
+      <div id="levelsStocks"></div>
+    </div>
+
+    <!-- Seasonality -->
+    <div class="section-head">
+      <h3>Seasonality In Play</h3>
+      <p>How each month has treated the market, and the stocks that own this one.</p>
+    </div>
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="seasonalityHead"></tr></thead>
+          <tbody><tr id="seasonalityRow"></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Top Seasonal Stocks</h3></div>
+      <div id="seasonalStocks"></div>
+    </div>
+
+    <!-- Pakistan profile -->
+    <div class="section-head">
+      <h3>Pakistan Profile</h3>
+      <p>The macro picture every PSX investor watches, in one glance.</p>
+    </div>
+    <div id="pakistanProfileCards" class="cards four"></div>
+
+    <!-- News / announcements / payouts -->
+    <div class="section-head">
+      <h3>Everything Happening In The Market</h3>
+    </div>
+    <div class="grid three">
+      <div class="card">
+        <div class="card-head"><h3>Latest News</h3></div>
+        <div id="marketNewsList"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Company Announcements</h3></div>
+        <div id="marketAnnouncementList"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Upcoming Payouts</h3></div>
+        <div id="upcomingPayouts"></div>
+      </div>
+    </div>
+
+    <!-- Calendar -->
+    <div class="section-head">
+      <h3>Coming Up In Pakistan</h3>
+      <p>Country-wide dates that move the market.</p>
+    </div>
+    <div id="calendarEvents" class="calendar-events-row"></div>
+
+  </section>
+
+
+  <section id="journal" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Journal</h2>
+        <p>Original analysis on markets, personal finance, and building wealth in Pakistan. Plus the latest podcasts.</p>
+      </div>
+    </div>
+    <div class="grid two">
+      <div id="journalArticles"></div>
+      <div class="card">
+        <div class="card-head"><h3>Latest Podcasts</h3></div>
+        <div id="journalPodcasts"></div>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="tools" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Tools Built Around Your Money</h2>
+        <p>Zakat and dividend purification, planning calculators, and side-by-side comparisons.</p>
+      </div>
+    </div>
+
+    <div id="toolCatalog" class="tool-catalog-grid"></div>
+
+    <div id="toolWorkspace" class="card tool-workspace hidden"></div>
+  </section>
+
+
+  <section id="worldclock" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>World Clock &amp; Trading Sessions</h2>
+        <p>Which markets are open right now, and what's opening or closing next — stocks and forex.</p>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h3>Stock Exchanges</h3>
+      <p>Sorted by which opens next.</p>
+    </div>
+    <div id="worldMarketsGrid" class="world-clock-grid"></div>
+
+    <div class="section-head">
+      <h3>Forex Sessions</h3>
+      <p>Sydney → Tokyo → London → New York, and where the overlaps are.</p>
+    </div>
+    <div class="card">
+      <div id="forexSessionTrack" class="forex-session-track"></div>
+      <div id="forexSessionList" class="world-clock-grid"></div>
+    </div>
+
+    <div class="section-head">
+      <h3>Crypto &amp; Mutual Funds</h3>
+      <p>Different rules from stock exchanges.</p>
+    </div>
+    <div class="grid two">
+      <div class="card world-clock-card market-open">
+        <div class="world-clock-head">
+          <strong>Cryptocurrency Markets</strong>
+          <span class="status-dot dot-open">OPEN</span>
+        </div>
+        <small>Trades 24 hours a day, 7 days a week — no exchange hours apply.</small>
+      </div>
+      <div class="card world-clock-card">
+        <div class="world-clock-head">
+          <strong>Pakistan Mutual Funds</strong>
+        </div>
+        <small>NAVs are struck once per business day by each AMC, generally after PSX closes (~4:00 PM PKT) — they don't trade continuously like stocks.</small>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="screener" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Stock Screener</h2>
+        <p>Build filters one at a time from your full checklist, or use a one-click preset below. Filters marked "Live" use real PSX data; the rest are shown for completeness and light up once a data vendor is connected.</p>
+      </div>
+      <button id="runScreenerBtn" class="primary">Run Screener</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>One-Click Presets</h3></div>
+      <div id="screenerPresets" class="screener-preset-row"></div>
+    </div>
+
+    <div class="card screener-active-filters">
+      <div class="card-head">
+        <h3>Active Filters</h3>
+        <button id="clearScreenerBtn" class="link">Clear all</button>
+      </div>
+      <div id="activeFilterChips" class="active-filter-chips">
+        <span class="muted-note">No filters yet — add some below, then press Run Screener.</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Today's Trading (Live filters)</h3></div>
+      <div class="screener-live-grid">
+        <label>Price min<input type="number" id="f_price_min" placeholder="e.g. 50"></label>
+        <label>Price max<input type="number" id="f_price_max" placeholder="e.g. 500"></label>
+        <label>Change % min<input type="number" id="f_change_min" placeholder="e.g. 0"></label>
+        <label>Change % max<input type="number" id="f_change_max" placeholder="e.g. 10"></label>
+        <label>P/E min<input type="number" id="f_pe_min" placeholder="e.g. 0"></label>
+        <label>P/E max<input type="number" id="f_pe_max" placeholder="e.g. 15"></label>
+        <label>1-Year change % min<input type="number" id="f_1y_min"></label>
+        <label>YTD change % min<input type="number" id="f_ytd_min"></label>
+        <label>Min volume<input type="number" id="f_volume_min" placeholder="e.g. 1000000"></label>
+        <label>52-week position
+          <select id="f_week52_position">
+            <option value="">Any</option>
+            <option value="near_high">Near 52-week high</option>
+            <option value="near_low">Near 52-week low</option>
+            <option value="mid">Mid-range</option>
+          </select>
+        </label>
+        <label>Sector
+          <select id="f_sector">
+            <option value="">All sectors</option>
+          </select>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="f_above_ldcp"> Trading above yesterday's close
+        </label>
+      </div>
+    </div>
+
+    <p id="screenerRecordingBanner" class="muted-note live-data-notice"></p>
+    <div id="screenerCatalog"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Results</h3>
+        <span id="screenerResultCount" class="soft-chip"></span>
+      </div>
+      <div id="screenerResults" class="table-scroll">
+        <div class="empty-chart">Set your filters above and press Run Screener.</div>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="mutualfunds" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Pakistan Mutual Funds</h2>
+        <p id="mutualFundsSource" class="muted-note">Loading…</p>
+      </div>
+      <button id="refreshFundsBtn" class="secondary">↻ Refresh NAVs</button>
+    </div>
+
+    <p class="muted-note live-data-notice">
+      Full directory of 392 open-end funds across 22 AMCs, from MUFAP's official asset-allocation
+      export. NAV and YTD come from a live MUFAP scrape when reachable; AUM, category, AMC and
+      inception date come from the uploaded directory either way.
+    </p>
+
+    <div class="stock-toolbar">
+      <input id="fundSearch" class="search" type="text" placeholder="Search fund name, AMC or category...">
+      <select id="fundCategoryFilter" class="select">
+        <option value="">All categories</option>
+      </select>
+      <span id="fundCount" class="count-pill"></span>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Fund</th>
+              <th>AMC</th>
+              <th>Category</th>
+              <th>NAV</th>
+              <th>YTD</th>
+              <th>AUM</th>
+              <th>Inception</th>
+              <th>Trend</th>
+            </tr>
+          </thead>
+          <tbody id="mutualFundsTable"></tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button class="secondary" id="fundsPrevPageBtn">← Previous</button>
+        <span id="fundsPageInfo">Page 1</span>
+        <button class="secondary" id="fundsNextPageBtn">Next →</button>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="crypto" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Cryptocurrencies</h2>
+        <p id="cryptoSource" class="muted-note">Loading…</p>
+      </div>
+      <button id="refreshCryptoBtn" class="secondary">↻ Refresh Prices</button>
+    </div>
+
+    <div class="grid two">
+      <div id="cryptoTopStrip" class="index-card-row crypto-top-strip"></div>
+
+      <div class="card crypto-sentiment-card">
+        <div class="card-head">
+          <div>
+            <h3>Overall Crypto Sentiment</h3>
+            <p id="cryptoSentimentSource" class="muted-note">Loading…</p>
+          </div>
+        </div>
+        <div class="sentiment-ring large-sentiment-ring" id="cryptoSentimentRing">
+          <strong id="cryptoSentimentScore">—</strong>
+        </div>
+        <h3 id="cryptoSentimentLabel" class="crypto-sentiment-label">Loading…</h3>
+        <div id="cryptoSentimentBar" class="breadth-track"><i class="up" style="width:0%"></i></div>
+      </div>
+    </div>
+
+    <div class="stock-toolbar">
+      <input id="cryptoSearch" class="search" type="text" placeholder="Search coin name or symbol...">
+      <span id="cryptoCount" class="count-pill"></span>
+    </div>
+
+    <p class="muted-note live-data-notice">
+      Live prices for the top coins by market cap (CoinGecko's free public API — no key required).
+      Thousands more low-liquidity/inactive tokens exist beyond this list; this covers the ones that
+      actually matter for a portfolio.
+    </p>
+
+    <div class="card stock-directory-card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>#</th>
+              <th>Coin</th>
+              <th>Symbol</th>
+              <th>Price (USD)</th>
+              <th>24h Change</th>
+              <th>Market Cap</th>
+              <th>24h Volume</th>
+              <th>7d Trend</th>
+            </tr>
+          </thead>
+          <tbody id="cryptoTable"></tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button class="secondary" id="cryptoPrevPageBtn">← Previous</button>
+        <span id="cryptoPageInfo">Page 1</span>
+        <button class="secondary" id="cryptoNextPageBtn">Next →</button>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="forex" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Forex</h2>
+        <p id="forexSource" class="muted-note">Loading…</p>
+      </div>
+      <button id="refreshForexBtn" class="secondary">↻ Refresh Rates</button>
+    </div>
+
+    <p class="muted-note live-data-notice">
+      Live ECB reference rates (Frankfurter's free public API — no key required) for every major
+      and minor currency, all against USD. This covers the currencies behind ~95% of forex trading
+      volume; very exotic/regional currencies beyond this list need a different, usually paid, provider.
+    </p>
+
+    <div class="stock-toolbar">
+      <input id="forexSearch" class="search" type="text" placeholder="Search currency code...">
+      <span id="forexCount" class="count-pill"></span>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Pair</th>
+              <th>Rate</th>
+              <th>1 USD =</th>
+              <th>1 Unit = USD</th>
+            </tr>
+          </thead>
+          <tbody id="forexTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="commodities" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Commodities</h2>
+        <p id="commoditiesSource" class="muted-note">Loading…</p>
+      </div>
+    </div>
+
+    <p id="commoditiesNotice" class="muted-note live-data-notice hidden">
+      Showing development values. Set the <code>MARKET_DATA_API_KEY</code> environment variable
+      (see README) to pull metals and energy from a live vendor feed — grains (wheat/corn/cotton)
+      stay on development data even then, since they aren't reliably available on the free tier.
+    </p>
+
+    <div id="commoditiesGrid" class="index-card-row commodities-grid"></div>
+  </section>
+
+
+  <section id="psxdivergence" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>PSX Divergence Screener</h2>
+        <p>52-week-low and RSI-divergence screen across every PSX-listed stock, market-wide.</p>
+      </div>
+      <button id="psxDivergenceRunBtn" class="primary">Run Scan</button>
+    </div>
+    <p class="muted-note live-data-notice">
+      Walks every PSX symbol's ~1 year of daily price history and flags: stocks near their 52-week low,
+      bullish/bearish RSI divergence anywhere in the market, and divergences that sit within an uptrend or
+      downtrend structure. A full market scan takes several minutes on first run since it covers 700+
+      symbols one at a time — results are cached so reopening this tab shows your last scan instantly.
+      This is a technical screen, not investment advice.
+    </p>
+    <p id="psxDivergenceStatus" class="muted-note"></p>
+    <div id="psxDivergenceResults"></div>
+  </section>
+
+
+  <section id="forextech" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Forex Technicals</h2>
+        <p>RSI(14), bullish/bearish divergence and trend structure across major pairs plus gold and silver, on 30m and 1h bars.</p>
+      </div>
+      <button id="forexTechRunBtn" class="primary">Run Scan</button>
+    </div>
+    <p class="muted-note live-data-notice">
+      This is a technical screen, not investment advice — always do your own research before trading.
+      A full scan takes a minute or two; results are cached so reopening this tab shows your last scan instantly.
+    </p>
+    <p id="forexTechStatus" class="muted-note"></p>
+    <div id="forexTechResults"></div>
+  </section>
+
+
+  <section id="cryptotech" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Crypto Technicals</h2>
+        <p>Same RSI-divergence / trend-structure screen as Forex Technicals, across the top ~15 cryptocurrencies, on 30m, 1h and 4h bars.</p>
+      </div>
+      <button id="cryptoTechRunBtn" class="primary">Run Scan</button>
+    </div>
+    <p class="muted-note live-data-notice">
+      This is a technical screen, not investment advice — always do your own research before trading.
+      A full scan takes a couple of minutes; results are cached so reopening this tab shows your last scan instantly.
+    </p>
+    <p id="cryptoTechStatus" class="muted-note"></p>
+    <div id="cryptoTechResults"></div>
+  </section>
+
+
+  <section id="stocks" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>All PSX Stocks</h2>
+        <p>Open any stock inside Yalvon360 — no redirect required. Prices refresh automatically in the background.</p>
+      </div>
+      <div class="intro-actions">
+        <span id="liveQuotesStatus" class="status-pill">Live prices: loading…</span>
+        <button id="refreshLiveBtn" class="secondary">↻ Refresh Live Prices</button>
+        <button id="refreshSymbolsBtn" class="secondary">↻ Refresh Directory</button>
+      </div>
+    </div>
+
+    <p id="technicalsProgress" class="muted-note live-data-notice"></p>
+
+
+    <div class="stock-toolbar">
+      <input
+        id="allStockSearch"
+        class="search"
+        type="text"
+        placeholder="Search symbol, company or sector..."
+      >
+
+      <select id="sectorFilter" class="select">
+        <option value="">All sectors</option>
+      </select>
+
+      <select id="stockMoveFilter" class="select">
+        <option value="">Any move</option>
+        <option value="up">Up today</option>
+        <option value="down">Down today</option>
+        <option value="big_up">Big gainers (≥5%)</option>
+        <option value="big_down">Big losers (≤-5%)</option>
+      </select>
+
+      <span id="allStockCount" class="count-pill">Loading…</span>
+    </div>
+
+    <div class="card stock-directory-card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Symbol</th>
+              <th>Company</th>
+              <th>Sector</th>
+              <th>Price</th>
+              <th>Change %</th>
+              <th>Volume</th>
+              <th>P/E</th>
+              <th>RSI (14)</th>
+              <th>Trend (50/200 SMA)</th>
+              <th>Held By Funds</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="allStocksTable"></tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button class="secondary" id="prevPageBtn">← Previous</button>
+        <span id="pageInfo">Page 1</span>
+        <button class="secondary" id="nextPageBtn">Next →</button>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="stockdetail" class="page">
+
+    <div class="stock-detail-header">
+      <button class="back-button" data-page-link="stocks">← All PSX Stocks</button>
+
+      <div class="stock-title">
+        <div>
+          <span class="eyebrow-light">STOCK PROFILE</span>
+          <h2 id="detailSymbol">—</h2>
+          <p id="detailCompany">—</p>
+        </div>
+
+        <div class="detail-price">
+          <strong id="detailPrice">—</strong>
+          <span id="detailChange">—</span>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="stock-detail-grid">
+      <div class="card stock-chart-card">
+        <div class="card-head">
+          <div>
+            <h3>Price Graph</h3>
+            <p>Intraday series when available</p>
+          </div>
+          <span id="detailSource" class="soft-chip">—</span>
+        </div>
+
+        <div id="stockDetailChart" class="detail-chart"></div>
+      </div>
+
+      <div class="card quote-card">
+        <div class="card-head">
+          <div>
+            <h3>Quote</h3>
+            <p id="detailUpdated">—</p>
+          </div>
+        </div>
+
+        <div id="quoteMetrics" class="quote-metrics"></div>
+      </div>
+    </div>
+
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Trading Range</h3>
+          <p>Day range, circuit and 52-week range when available</p>
+        </div>
+      </div>
+
+      <div id="stockRanges"></div>
+    </div>
+
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Fundamentals</h3>
+          <p id="fundamentalsNote" class="muted-note"></p>
+        </div>
+      </div>
+
+      <div id="fundamentalsMetrics" class="quote-metrics"></div>
+
+      <div class="fundamentals-gauge-row">
+        <div class="fundamentals-gauge">
+          <small>P/E (TTM)</small>
+          <div class="sentiment-ring mini-sentiment-ring" id="peGaugeRing"><strong id="peGaugeValue">—</strong></div>
+        </div>
+        <div class="fundamentals-gauge">
+          <small>Position In 52-Week Range</small>
+          <div id="week52GaugeBar" class="range-gauge-bar"></div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+
+  <section id="sentiment" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>PSX Fear &amp; Greed</h2>
+        <p>Composite sentiment for the Pakistan Stock Exchange, built from breadth, momentum, volume, volatility and macro factors.</p>
+      </div>
+    </div>
+    <div class="sentiment-page-grid">
+      <div class="card sentiment-score-card">
+        <span class="eyebrow-light">SENTIMENT SCORE</span>
+        <div class="sentiment-ring large-sentiment-ring" id="largeSentimentRing">
+          <strong id="largeSentimentScore">—</strong>
+        </div>
+        <h3 id="largeSentimentLabel">Loading…</h3>
+        <p id="sentimentSourceNote" class="muted-note sentiment-source-note">Development/demo score — a live-calculated version will use real breadth, momentum and volume data once connected.</p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Components</h3><p>What is driving the score</p></div>
+        </div>
+        <div id="sentimentComponents"></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h3>Global &amp; Composite Sentiment</h3>
+      <p>How every major asset class and region is feeling right now — click any market for detail.</p>
+    </div>
+    <div id="globalSentimentGrid" class="global-sentiment-grid"></div>
+  </section>
+
+  <section id="sectors" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Sector Rotation</h2>
+        <p>All PSX sectors, ranked by momentum. Click any sector to see its stocks.</p>
+      </div>
+    </div>
+    <div class="stock-toolbar">
+      <select id="sectorSort" class="select">
+        <option value="default">Default order</option>
+        <option value="change_desc">Biggest gainers first</option>
+        <option value="change_asc">Biggest losers first</option>
+        <option value="name_asc">Name (A–Z)</option>
+      </select>
+      <span id="sectorCount" class="count-pill"></span>
+    </div>
+    <div class="card" id="sectorList"></div>
+  </section>
+
+
+  <section id="macro" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Pakistan Macro</h2>
+        <p>The full macro picture — 18 indicators across monetary, external, trade, energy and growth. Click any card for detail.</p>
+      </div>
+    </div>
+
+    <div class="grid two macro-signal-grid">
+      <div class="card macro-signal-card">
+        <span class="eyebrow-light">MACRO SIGNAL</span>
+        <div class="sentiment-ring large-sentiment-ring" id="macroSignalRing">
+          <strong id="macroSignalScore">—</strong>
+        </div>
+        <h3 id="macroSignalLabel">Loading…</h3>
+        <p class="muted-note" id="macroSignalNote">What the indicators mean together.</p>
+      </div>
+
+      <div id="macroCards" class="cards four"></div>
+    </div>
+
+    <div class="section-head">
+      <h3>All Indicators, By Category</h3>
+      <p>Click any card for its historical note and trend.</p>
+    </div>
+    <div id="macroFullGrid" class="macro-full-grid"></div>
+  </section>
+
+
+  <section id="news" class="page">
+    <div class="page-intro">
+      <div>
+        <h2>Announcements</h2>
+        <p>Company and market updates.</p>
+      </div>
+    </div>
+    <div id="announcementList"></div>
+  </section>
+
+</main>
+
+
+<div id="marketDetailModal" class="modal hidden">
+  <div class="modal-box market-detail-modal-box">
+    <div class="card-head">
+      <h3 id="marketDetailTitle">—</h3>
+      <button id="closeMarketDetailModal" class="icon-button">×</button>
+    </div>
+    <div id="marketDetailBody"></div>
+  </div>
+</div>
+
+
+<div id="confirmModal" class="modal hidden">
+  <div class="modal-box confirm-modal-box">
+    <h3 id="confirmModalTitle">Are you sure?</h3>
+    <p id="confirmModalMessage"></p>
+    <div class="confirm-modal-actions">
+      <button id="confirmModalNo" class="secondary">No</button>
+      <button id="confirmModalYes" class="primary">Yes</button>
+    </div>
+  </div>
+</div>
+
+
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+
+    <div class="card-head">
+      <h3>Add Transaction</h3>
+      <button id="closeModal" class="icon-button">×</button>
+    </div>
+
+    <label>
+      Symbol
+      <input id="txSymbol" placeholder="FFC">
+    </label>
+
+    <label>
+      Transaction date
+      <input id="txDate" type="date">
+    </label>
+
+    <label>
+      Type
+      <select id="txType">
+        <option>BUY</option>
+        <option>SELL</option>
+      </select>
+    </label>
+
+    <label>
+      Quantity
+      <input id="txQty" type="number" min="1">
+    </label>
+
+    <label>
+      Price
+      <input id="txPrice" type="number" min="0.01" step="0.01">
+    </label>
+
+    <button id="saveTx" class="primary full">Save Transaction</button>
+    <p id="formError" class="error"></p>
+
+  </div>
+</div>
+
+
+<div id="holdingModal" class="modal hidden">
+  <div class="modal-box holding-modal-box">
+
+    <div class="card-head">
+      <div>
+        <h3 id="holdingModalSymbol">—</h3>
+        <p id="holdingModalCompany" class="muted-note"></p>
+      </div>
+      <button id="closeHoldingModal" class="icon-button">×</button>
+    </div>
+
+    <div id="holdingModalStats" class="cards four holding-modal-stats"></div>
+
+    <div class="card-head">
+      <h4>Value Since Purchase</h4>
+    </div>
+    <div id="holdingModalChart" class="big-chart"></div>
+
+    <div class="card-head">
+      <h4>Day-By-Day P/L Calendar</h4>
+      <span class="soft-chip">Click a day to see cumulative P/L up to it</span>
+    </div>
+    <div id="holdingModalCalendar" class="calendar-grid"></div>
+
+    <div id="holdingModalSelectedDay" class="holding-selected-day"></div>
+
+    <p class="muted-note holding-modal-footnote">
+      Days marked <b>Est.</b> are a straight-line estimate between your purchase price and the
+      first day this feature recorded a real snapshot — not an exact historical close.
+    </p>
+
+  </div>
+</div>
+
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
