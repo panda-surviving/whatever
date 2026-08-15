@@ -1231,6 +1231,77 @@ async function openStock(symbol) {
   }
 
   loadFundamentals(symbol);
+  loadTechnicalVerdict(symbol);
+}
+
+async function loadTechnicalVerdict(symbol) {
+  $("technicalVerdictBody").innerHTML = `<div class="loading-panel">Computing verdict…</div>`;
+  $("pivotPointsBody").innerHTML = `<div class="loading-panel">Computing levels…</div>`;
+
+  try {
+    const d = await getJSON(`/api/stock/${encodeURIComponent(symbol)}/verdict`);
+
+    if (!d.available) {
+      const msg = `<div class="empty-chart">${esc(d.note || "Not enough data to compute a verdict yet.")}</div>`;
+      $("technicalVerdictBody").innerHTML = msg;
+      $("pivotPointsBody").innerHTML = msg;
+      return;
+    }
+
+    const verdictClass = d.verdict.toLowerCase().replace(/\s+/g, "-");
+    $("technicalVerdictBody").innerHTML = `
+      <div class="verdict-summary">
+        <div class="verdict-score-ring ${verdictClass}">${d.score}</div>
+        <div>
+          <div class="verdict-label">${esc(d.verdict)}</div>
+          <div class="verdict-price-note">Weighted technical score out of 100, at Rs. ${Number(d.price).toFixed(2)}</div>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="verdict-breakdown-table">
+          <thead><tr><th>Indicator</th><th>Weight</th><th>Signal</th><th>Contribution</th></tr></thead>
+          <tbody>
+            ${d.breakdown.map(b => `
+              <tr>
+                <td>${esc(b.indicator)}</td>
+                <td>${b.weight}</td>
+                <td><span class="lean-tag lean-${b.lean}">${b.used ? b.lean : "n/a"}</span></td>
+                <td>${b.contribution == null ? "—" : b.contribution}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const pp = d.pivot_points;
+    const pivotRows = (levels) => `
+      <table class="pivot-table">
+        <tr class="pivot-row-r"><td>R3</td><td>${levels.r3}</td></tr>
+        <tr class="pivot-row-r"><td>R2</td><td>${levels.r2}</td></tr>
+        <tr class="pivot-row-r"><td>R1</td><td>${levels.r1}</td></tr>
+        <tr class="pivot-row-p"><td>Pivot (P)</td><td>${levels.pivot}</td></tr>
+        <tr class="pivot-row-s"><td>S1</td><td>${levels.s1}</td></tr>
+        <tr class="pivot-row-s"><td>S2</td><td>${levels.s2}</td></tr>
+        <tr class="pivot-row-s"><td>S3</td><td>${levels.s3}</td></tr>
+      </table>
+    `;
+
+    $("pivotBasisNote").textContent = pp.basis_date
+      ? `Classic and Fibonacci pivot points, based on the trading day ending ${pp.basis_date}.`
+      : "Classic and Fibonacci pivot points from the most recent completed trading day.";
+
+    $("pivotPointsBody").innerHTML = `
+      <div class="pivot-tables-row">
+        <div class="pivot-table-block"><h4>Classic Pivot Points</h4>${pivotRows(pp.classic)}</div>
+        <div class="pivot-table-block"><h4>Fibonacci Pivot Points</h4>${pivotRows(pp.fibonacci)}</div>
+      </div>
+    `;
+  } catch (error) {
+    const msg = `<div class="error-panel">${esc(error.message)}</div>`;
+    $("technicalVerdictBody").innerHTML = msg;
+    $("pivotPointsBody").innerHTML = msg;
+  }
 }
 
 async function loadFundamentals(symbol) {
@@ -3665,6 +3736,9 @@ const PSX_DIV_COLS = [
   { key: "week52_low", label: "52W Low", fmt: "num2" },
   { key: "pct_above_52w_low", label: "% Above 52W Low", fmt: "pct" },
   { key: "latest_rsi", label: "RSI (14)" },
+  { key: "div_1d", label: "1D Divergence" },
+  { key: "div_1w", label: "1W Divergence" },
+  { key: "div_1m", label: "1M Divergence" },
   { key: "divergence_type", label: "Type" },
   { key: "pivot1_date", label: "Pivot 1" },
   { key: "pivot2_date", label: "Pivot 2" },

@@ -11,13 +11,14 @@ import io
 import csv
 import uuid
 import datetime as dt
+import math
 from bs4 import BeautifulSoup
 
 # numpy/pandas power the intraday RSI-divergence technical scanners
-# (Crypto Technicals / Forex Technicals) ported over from the PSX
-# Toolkit project. They are optional at import time so that the rest of
-# the app still runs even on a minimal install; the scan routes below
-# give a clear error if they are genuinely missing.
+# (Crypto Technicals / Forex Technicals / PSX Divergence Screener) ported
+# over from the PSX Toolkit project. They are optional at import time so
+# that the rest of the app still runs even on a minimal install; the
+# scan routes below give a clear error if they are genuinely missing.
 try:
     import numpy as np
     import pandas as pd
@@ -25,6 +26,56 @@ try:
     _TECHNICALS_AVAILABLE = True
 except Exception:  # pragma: no cover - defensive, see requirements.txt
     _TECHNICALS_AVAILABLE = False
+
+
+def _clean_for_json(obj):
+    """Recursively converts numpy/pandas scalar & date types into plain
+    JSON-safe Python values, and turns NaN/Infinity into null.
+
+    This matters everywhere, not just for the technical scanners: a bare
+    NaN/Infinity is not valid JSON, and the browser's `response.json()`
+    throws a parse error (not a Python-side error, so it never shows up
+    in server logs) if the API ever serializes one — which can happen
+    any time a numeric field is computed from messy scraped data (a
+    division by zero, a source site returning "N/A"/"-" in an unexpected
+    spot, etc). Every route that returns numbers derived from scraped or
+    computed data should go through safe_jsonify below instead of the
+    bare jsonify, as a blanket guarantee against that failure mode.
+
+    Deliberately does not require numpy/pandas to be installed for the
+    plain-float case, so this protection is never itself the thing that
+    breaks if the heavier technicals dependencies are ever missing.
+    """
+    if isinstance(obj, dict):
+        return {k: _clean_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_clean_for_json(v) for v in obj]
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, (dt.date, dt.datetime)):
+        return obj.isoformat()
+    if _TECHNICALS_AVAILABLE:
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            f = float(obj)
+            return None if (math.isnan(f) or math.isinf(f)) else f
+        if isinstance(obj, (pd.Timestamp, np.datetime64)):
+            return pd.Timestamp(obj).isoformat()
+    if hasattr(obj, "item") and not isinstance(obj, (str, bytes)):
+        try:
+            return _clean_for_json(obj.item())
+        except Exception:
+            return obj
+    return obj
+
+
+def safe_jsonify(data):
+    return jsonify(_clean_for_json(data))
 
 BASE = Path(__file__).resolve().parent
 DB = BASE / "portfolio.db"
@@ -1520,9 +1571,14 @@ def _number(value):
     if value is None:
         return None
     try:
-        return float(str(value).replace(",", "").strip())
+        n = float(str(value).replace(",", "").strip())
     except (ValueError, TypeError):
         return None
+    # float("nan")/float("inf") parse "successfully" in Python but are not
+    # valid JSON and would otherwise slip through into an API response.
+    if math.isnan(n) or math.isinf(n):
+        return None
+    return n
 
 
 def _downsample(values, target_len):
@@ -3194,7 +3250,7 @@ def mutual_funds():
     funds, source = fetch_mufap_funds()
     trends = get_fund_trends([f["name"] for f in funds])
     funds = [{**f, "trend": trends.get(f["name"], [])} for f in funds]
-    return jsonify({"funds": funds, "source": source})
+    return safe_jsonify({"funds": funds, "source": source})
 
 
 @app.post("/api/mutual-funds/refresh")
@@ -3202,7 +3258,7 @@ def mutual_funds_refresh():
     funds, source = fetch_mufap_funds(force=True)
     trends = get_fund_trends([f["name"] for f in funds])
     funds = [{**f, "trend": trends.get(f["name"], [])} for f in funds]
-    return jsonify({"funds": funds, "source": source})
+    return safe_jsonify({"funds": funds, "source": source})
 
 
 @app.get("/api/crypto/live")
@@ -3781,39 +3837,6 @@ INTRADAY_STRUCTURE_LOOKBACK = 80
 INTRADAY_SWING_ORDER = 4
 
 
-def _clean_for_json(obj):
-    """Recursively converts numpy/pandas scalar & date types into plain
-    JSON-safe Python values, and turns NaN/Infinity into null (a bare
-    NaN is not valid JSON and browsers reject it)."""
-    if isinstance(obj, dict):
-        return {k: _clean_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_clean_for_json(v) for v in obj]
-    if isinstance(obj, np.bool_):
-        return bool(obj)
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.floating):
-        f = float(obj)
-        return None if (np.isnan(f) or np.isinf(f)) else f
-    if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
-        return None
-    if isinstance(obj, (pd.Timestamp, np.datetime64)):
-        return pd.Timestamp(obj).isoformat()
-    if isinstance(obj, (dt.date, dt.datetime)):
-        return obj.isoformat()
-    if hasattr(obj, "item") and not isinstance(obj, (str, bytes)):
-        try:
-            return _clean_for_json(obj.item())
-        except Exception:
-            return obj
-    return obj
-
-
-def safe_jsonify(data):
-    return jsonify(_clean_for_json(data))
-
-
 def fetch_yf_ohlc(symbol, interval="30m", period="60d", max_retries=3):
     """Fetches OHLC bars via yfinance and normalizes the result to a
     DataFrame with columns: date, open, high, low, close."""
@@ -4044,16 +4067,138 @@ PSX_DIVERGENCE_HISTORY_DAYS = getattr(core, "HISTORY_DAYS", 420)
 PSX_DIVERGENCE_MIN_TRADING_DAYS = getattr(core, "MIN_TRADING_DAYS", 100)
 PSX_DIVERGENCE_PRICE_BASIS = getattr(core, "PRICE_BASIS", "close")
 PSX_DIVERGENCE_REQUEST_DELAY = getattr(core, "REQUEST_DELAY", 0.15)
+PSX_HISTORICAL_URL = "https://dps.psx.com.pk/historical"
+PSX_HISTORY_COLUMN_MAP = {
+    "DATE": "date", "OPEN": "open", "HIGH": "high", "LOW": "low",
+    "CLOSE": "close", "VOLUME": "volume",
+}
+
+
+def fetch_psx_history_direct(symbol, max_retries=3, retry_delays=(1, 2)):
+    """Fetches full OHLCV price history for a single PSX symbol directly
+    from PSX's own historical-data endpoint (the same one the psxdata
+    library targets), reusing this app's already-proven request headers
+    and retry pattern instead of a separate package's own session/rate
+    limiter. This avoids two independent scrapers hitting dps.psx.com.pk
+    concurrently with different client fingerprints, which is the most
+    likely reason the psxdata-based version of this scan was timing out
+    in production even though the rest of this app reaches PSX fine."""
+    last_exc = None
+    resp = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                PSX_HISTORICAL_URL, data={"symbol": symbol},
+                headers=HEADERS, timeout=25,
+            )
+            resp.raise_for_status()
+            break
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt < max_retries - 1:
+                time.sleep(retry_delays[min(attempt, len(retry_delays) - 1)])
+                continue
+            raise RuntimeError(f"PSX unreachable for {symbol} after {max_retries} attempts: {e}") from e
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    table = soup.find("table")
+    if table is None:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+
+    header_cells = table.find_all("th")
+    headers = [th.get_text(strip=True).upper() for th in header_cells]
+    if not headers:
+        first_row = table.find("tr")
+        headers = [c.get_text(strip=True).upper() for c in first_row.find_all(["td", "th"])] if first_row else []
+
+    col_index = {}
+    for i, h in enumerate(headers):
+        key = PSX_HISTORY_COLUMN_MAP.get(h)
+        if key and key not in col_index:
+            col_index[key] = i
+
+    if "date" not in col_index or "close" not in col_index:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+
+    body_rows = table.find_all("tr")
+    if header_cells:
+        body_rows = [r for r in body_rows if not r.find_all("th")]
+    else:
+        body_rows = body_rows[1:]  # first row was the header row (all <td>)
+
+    rows = []
+    for tr in body_rows:
+        cells = tr.find_all("td")
+        if len(cells) <= max(col_index.values()):
+            continue
+        texts = [c.get_text(strip=True) for c in cells]
+        close_val = _number(texts[col_index["close"]])
+        if not texts[col_index["date"]] or close_val is None:
+            continue
+        rows.append({
+            "date": texts[col_index["date"]],
+            "open": _number(texts[col_index["open"]]) if "open" in col_index else None,
+            "high": _number(texts[col_index["high"]]) if "high" in col_index else None,
+            "low": _number(texts[col_index["low"]]) if "low" in col_index else None,
+            "close": close_val,
+            "volume": _number(texts[col_index["volume"]]) if "volume" in col_index else None,
+        })
+
+    if not rows:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    return df
+
+
+def compute_multi_timeframe_divergence(full_df, daily_df):
+    """Independently checks for RSI divergence on daily, weekly and
+    monthly resampled bars. full_df should hold as much history as is
+    available (used for weekly/monthly, where you need years of bars to
+    get enough pivots); daily_df is the already-windowed frame used for
+    the rest of the daily-bar screen, reused here for the "1D" column so
+    daily results stay consistent with the rest of the row."""
+    out = {"div_1d": None, "div_1w": None, "div_1m": None}
+
+    tf_specs = [
+        ("div_1d", daily_df, None, PSX_DIVERGENCE_LOOKBACK_DAYS, PSX_DIVERGENCE_SWING_ORDER, PSX_DIVERGENCE_MIN_TRADING_DAYS),
+        ("div_1w", full_df, "W", 26, 3, 20),
+        ("div_1m", full_df, "ME", 15, 2, 12),
+    ]
+
+    for key, src_df, rule, lookback, swing_order, min_bars in tf_specs:
+        try:
+            tf_df = src_df if rule is None else resample_ohlc(src_df, rule)
+            if tf_df is None or len(tf_df) < min_bars:
+                continue
+            tf_df = tf_df.copy()
+            tf_df["rsi"] = core.compute_rsi(tf_df["close"], core.RSI_PERIOD)
+            lookback = min(lookback, len(tf_df) - 1)
+            bullish = core.check_bullish_divergence(tf_df, lookback, swing_order)
+            bearish = core.check_bearish_divergence(tf_df, lookback, swing_order)
+            if bullish:
+                out[key] = {"type": "bullish", **bullish}
+            elif bearish:
+                out[key] = {"type": "bearish", **bearish}
+        except Exception:
+            pass  # leave this timeframe's column blank rather than fail the whole row
+
+    return out
 
 
 def run_psx_divergence_scan(progress_cb=None):
     """Market-wide PSX scan: near-52-week-low, bullish/bearish RSI
     divergence, and trend structure, for every listed symbol. Returns a
     dict of named result lists rather than writing CSV/HTML files (this
-    is the same math as PSX Toolkit's main(), reshaped for an API)."""
-    import psxdata
+    is the same math as PSX Toolkit's main(), reshaped for an API).
 
-    tickers = psxdata.tickers()
+    Also checks each stock's RSI divergence independently on daily,
+    weekly and monthly bars (the 1D/1W/1M columns) — a stock can show
+    divergence on one timeframe and not another, which is exactly the
+    kind of thing this extra view is meant to surface."""
+    tickers = [s["symbol"] for s in fetch_psx_symbols()]
     if not tickers:
         raise RuntimeError("PSX did not return a symbol list (site may be unreachable right now).")
 
@@ -4067,7 +4212,8 @@ def run_psx_divergence_scan(progress_cb=None):
     total = len(tickers)
     for i, symbol in enumerate(tickers, 1):
         try:
-            df = psxdata.stocks(symbol, start=start_date)
+            full_df = fetch_psx_history_direct(symbol)
+            df = full_df if full_df.empty else full_df[full_df["date"] >= pd.Timestamp(start_date)].reset_index(drop=True)
         except Exception as e:
             errors.append({"symbol": symbol, "error": str(e)})
             if progress_cb:
@@ -4110,12 +4256,20 @@ def run_psx_divergence_scan(progress_cb=None):
 
         df["rsi"] = core.compute_rsi(df["close"], core.RSI_PERIOD)
 
+        multi_tf = compute_multi_timeframe_divergence(full_df, df)
+
+        def _tf_label(tf):
+            return (tf["type"].capitalize() if tf else "—")
+
         base_info = {
             "symbol": symbol,
             "latest_close": round(float(latest_close), 2),
             "week52_low": round(float(low_52w), 2),
             "pct_above_52w_low": round(float(pct_above_low), 2),
             "latest_rsi": round(float(df["rsi"].iloc[-1]), 1),
+            "div_1d": _tf_label(multi_tf["div_1d"]),
+            "div_1w": _tf_label(multi_tf["div_1w"]),
+            "div_1m": _tf_label(multi_tf["div_1m"]),
         }
 
         if is_near_low:
@@ -4126,6 +4280,7 @@ def run_psx_divergence_scan(progress_cb=None):
         structure = core.classify_structure(df, PSX_STRUCTURE_LOOKBACK_DAYS, PSX_STRUCTURE_SWING_ORDER)
 
         if is_near_low and bullish:
+
             hit = dict(base_info); hit.update(bullish)
             divergence_hits.append(hit)
         if bullish:
@@ -4203,6 +4358,258 @@ def api_psx_divergence_scan_cached():
     if cached is None:
         return safe_jsonify({"ok": True, "found": False})
     return safe_jsonify({"ok": True, "found": True, "result": cached["data"], "saved_at": cached["saved_at"]})
+
+
+# =====================================================================
+# CONSOLIDATED TECHNICAL VERDICT + SUPPORT & RESISTANCE (new)
+# =====================================================================
+# A per-stock analysis view combining RSI, MACD, and SMA/EMA(20/50/200)
+# into a single weighted 0-100 score and a Strong Buy..Strong Sell
+# verdict, plus classic and Fibonacci pivot points for support and
+# resistance. Built on top of fetch_psx_history_direct (full history
+# straight from PSX) rather than this app's own slowly-self-recorded
+# stock_price_history table, so it works immediately for any symbol
+# rather than needing up to 200 days of the app running first.
+
+_stock_history_cache = {}
+_stock_history_cache_lock = threading.Lock()
+STOCK_HISTORY_CACHE_MINUTES = 30
+
+
+def get_full_history_cached(symbol):
+    symbol = symbol.upper()
+    now = datetime.now()
+    with _stock_history_cache_lock:
+        entry = _stock_history_cache.get(symbol)
+        if entry and now - entry["time"] < timedelta(minutes=STOCK_HISTORY_CACHE_MINUTES):
+            return entry["df"]
+
+    df = fetch_psx_history_direct(symbol)
+
+    with _stock_history_cache_lock:
+        _stock_history_cache[symbol] = {"df": df, "time": now}
+    return df
+
+
+def _sma_pd(series, n):
+    if len(series) < n:
+        return None
+    return float(series.tail(n).mean())
+
+
+def _ema_last(series, n):
+    if len(series) < n:
+        return None
+    return float(series.ewm(span=n, adjust=False).mean().iloc[-1])
+
+
+def _macd_pd(series):
+    if len(series) < 35:
+        return None, None, None
+    ema12 = series.ewm(span=12, adjust=False).mean()
+    ema26 = series.ewm(span=26, adjust=False).mean()
+    macd_line = ema12 - ema26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    hist = macd_line - signal_line
+    return float(macd_line.iloc[-1]), float(signal_line.iloc[-1]), float(hist.iloc[-1])
+
+
+def compute_pivot_points(prior_high, prior_low, prior_close):
+    """Classic floor-trader pivot points (P, S1-S3, R1-R3) from the
+    prior completed trading day's high/low/close."""
+    p = (prior_high + prior_low + prior_close) / 3
+    r1 = 2 * p - prior_low
+    s1 = 2 * p - prior_high
+    r2 = p + (prior_high - prior_low)
+    s2 = p - (prior_high - prior_low)
+    r3 = prior_high + 2 * (p - prior_low)
+    s3 = prior_low - 2 * (prior_high - p)
+    return {
+        "pivot": round(p, 2),
+        "r1": round(r1, 2), "r2": round(r2, 2), "r3": round(r3, 2),
+        "s1": round(s1, 2), "s2": round(s2, 2), "s3": round(s3, 2),
+    }
+
+
+def compute_fibonacci_pivot_points(prior_high, prior_low, prior_close):
+    """Fibonacci pivot points: same base pivot as the classic method,
+    but support/resistance bands sized with 38.2% / 61.8% / 100% of the
+    prior day's range instead of the floor-trader formulas."""
+    p = (prior_high + prior_low + prior_close) / 3
+    rng = prior_high - prior_low
+    r1 = p + 0.382 * rng
+    r2 = p + 0.618 * rng
+    r3 = p + 1.000 * rng
+    s1 = p - 0.382 * rng
+    s2 = p - 0.618 * rng
+    s3 = p - 1.000 * rng
+    return {
+        "pivot": round(p, 2),
+        "r1": round(r1, 2), "r2": round(r2, 2), "r3": round(r3, 2),
+        "s1": round(s1, 2), "s2": round(s2, 2), "s3": round(s3, 2),
+    }
+
+
+# Weighted contribution of each indicator toward the 0-100 technical
+# score. Weights sum to 100 so the final score reads directly as a
+# percentage. Missing indicators (not enough history yet) are excluded
+# and the remaining weights are rescaled, so the score always stays on
+# a comparable 0-100 scale regardless of which indicators are available.
+VERDICT_WEIGHTS = {
+    "rsi": 15,
+    "macd": 15,
+    "sma20": 10, "sma50": 12, "sma200": 15,
+    "ema20": 10, "ema50": 11, "ema200": 12,
+}
+
+
+def _score_price_vs_ma(price, ma):
+    """+100 if price is meaningfully above the MA, -100 if meaningfully
+    below, scaled smoothly in between rather than a hard cutoff."""
+    if ma in (None, 0):
+        return None
+    pct = (price - ma) / ma * 100
+    return max(-100, min(100, pct * 20))  # +/-5% away from the MA saturates the score
+
+
+def _score_rsi(rsi):
+    if rsi is None:
+        return None
+    if rsi >= 70:
+        return max(-100, 100 - (rsi - 70) * 6)  # very overbought pulls the score back down
+    if rsi <= 30:
+        return max(-100, -100 + (30 - rsi) * -6) if rsi > 0 else -100
+    # Linear: 30->-100 ... 50->0 ... 70->+100, i.e. rewards RSI rising through the midline
+    return (rsi - 50) * 5
+
+
+def _score_macd(macd_hist):
+    if macd_hist is None:
+        return None
+    return max(-100, min(100, macd_hist * 40))
+
+
+def compute_technical_verdict(symbol):
+    df = get_full_history_cached(symbol)
+    if df is None or df.empty or len(df) < 20:
+        return {
+            "symbol": symbol.upper(), "available": False,
+            "note": "Not enough price history returned by PSX for this symbol yet to compute a verdict.",
+        }
+
+    df = df.sort_values("date").reset_index(drop=True)
+    closes = df["close"]
+    price = float(closes.iloc[-1])
+
+    rsi_series = core.compute_rsi(closes, 14)
+    rsi14 = float(rsi_series.iloc[-1]) if not rsi_series.empty and pd.notna(rsi_series.iloc[-1]) else None
+    macd_val, macd_signal, macd_hist = _macd_pd(closes)
+
+    sma20, sma50, sma200 = _sma_pd(closes, 20), _sma_pd(closes, 50), _sma_pd(closes, 200)
+    ema20, ema50, ema200 = _ema_last(closes, 20), _ema_last(closes, 50), _ema_last(closes, 200)
+
+    raw_scores = {
+        "rsi": _score_rsi(rsi14),
+        "macd": _score_macd(macd_hist),
+        "sma20": _score_price_vs_ma(price, sma20),
+        "sma50": _score_price_vs_ma(price, sma50),
+        "sma200": _score_price_vs_ma(price, sma200),
+        "ema20": _score_price_vs_ma(price, ema20),
+        "ema50": _score_price_vs_ma(price, ema50),
+        "ema200": _score_price_vs_ma(price, ema200),
+    }
+
+    available = {k: v for k, v in raw_scores.items() if v is not None}
+    total_weight = sum(VERDICT_WEIGHTS[k] for k in available) or 1
+    weighted_sum = sum(available[k] * VERDICT_WEIGHTS[k] for k in available)
+    # weighted_sum ranges roughly -100*total_weight .. +100*total_weight; normalize to 0-100
+    normalized = ((weighted_sum / total_weight) + 100) / 2
+    score = round(max(0, min(100, normalized)), 1)
+
+    if score >= 80:
+        verdict = "Strong Buy"
+    elif score >= 60:
+        verdict = "Buy"
+    elif score >= 40:
+        verdict = "Neutral"
+    elif score >= 20:
+        verdict = "Sell"
+    else:
+        verdict = "Strong Sell"
+
+    def lean(raw):
+        if raw is None:
+            return "unavailable"
+        if raw > 15:
+            return "bullish"
+        if raw < -15:
+            return "bearish"
+        return "neutral"
+
+    indicator_labels = {
+        "rsi": f"RSI (14): {round(rsi14, 1) if rsi14 is not None else '—'}",
+        "macd": f"MACD Histogram: {round(macd_hist, 3) if macd_hist is not None else '—'}",
+        "sma20": f"Price vs SMA20: {round(sma20, 2) if sma20 is not None else '—'}",
+        "sma50": f"Price vs SMA50: {round(sma50, 2) if sma50 is not None else '—'}",
+        "sma200": f"Price vs SMA200: {round(sma200, 2) if sma200 is not None else '—'}",
+        "ema20": f"Price vs EMA20: {round(ema20, 2) if ema20 is not None else '—'}",
+        "ema50": f"Price vs EMA50: {round(ema50, 2) if ema50 is not None else '—'}",
+        "ema200": f"Price vs EMA200: {round(ema200, 2) if ema200 is not None else '—'}",
+    }
+
+    breakdown = []
+    for key in ["rsi", "macd", "sma20", "sma50", "sma200", "ema20", "ema50", "ema200"]:
+        raw = raw_scores[key]
+        breakdown.append({
+            "indicator": indicator_labels[key],
+            "weight": VERDICT_WEIGHTS[key],
+            "used": raw is not None,
+            "lean": lean(raw),
+            "contribution": round(raw, 1) if raw is not None else None,
+        })
+
+    # Support/resistance from the most recent completed trading day.
+    prior_high = float(df["high"].iloc[-1]) if "high" in df.columns and pd.notna(df["high"].iloc[-1]) else price
+    prior_low = float(df["low"].iloc[-1]) if "low" in df.columns and pd.notna(df["low"].iloc[-1]) else price
+    prior_close = price
+
+    return {
+        "symbol": symbol.upper(),
+        "available": True,
+        "price": round(price, 2),
+        "score": score,
+        "verdict": verdict,
+        "breakdown": breakdown,
+        "indicators": {
+            "rsi14": round(rsi14, 1) if rsi14 is not None else None,
+            "macd": round(macd_val, 4) if macd_val is not None else None,
+            "macd_signal": round(macd_signal, 4) if macd_signal is not None else None,
+            "macd_histogram": round(macd_hist, 4) if macd_hist is not None else None,
+            "sma20": round(sma20, 2) if sma20 is not None else None,
+            "sma50": round(sma50, 2) if sma50 is not None else None,
+            "sma200": round(sma200, 2) if sma200 is not None else None,
+            "ema20": round(ema20, 2) if ema20 is not None else None,
+            "ema50": round(ema50, 2) if ema50 is not None else None,
+            "ema200": round(ema200, 2) if ema200 is not None else None,
+        },
+        "pivot_points": {
+            "classic": compute_pivot_points(prior_high, prior_low, prior_close),
+            "fibonacci": compute_fibonacci_pivot_points(prior_high, prior_low, prior_close),
+            "basis_date": df["date"].iloc[-1].date().isoformat() if pd.notna(df["date"].iloc[-1]) else None,
+        },
+    }
+
+
+@app.get("/api/stock/<symbol>/verdict")
+def stock_verdict(symbol):
+    guard = _technicals_guard()
+    if guard:
+        return guard
+    try:
+        result = compute_technical_verdict(symbol)
+    except Exception as e:
+        return safe_jsonify({"available": False, "symbol": symbol.upper(), "note": f"Could not compute: {e}"}), 200
+    return safe_jsonify(result)
 
 
 # =====================================================================

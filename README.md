@@ -70,6 +70,25 @@ shows results instantly.
 
 This is a technical screen, not investment advice.
 
+### New: Consolidated Technical Verdict & Support/Resistance (stock page)
+
+Opening any stock's profile page (from All PSX Stocks, Watchlist,
+Portfolio, etc.) now also shows two new cards:
+
+- **Consolidated Technical Verdict** — RSI(14), MACD, and SMA/EMA at
+  20/50/200 are each scored bullish/neutral/bearish, weighted, and
+  combined into a single 0–100 score mapped to **Strong Buy / Buy /
+  Neutral / Sell / Strong Sell**. A breakdown table shows exactly which
+  indicators pushed the score up or down and by how much.
+- **Support & Resistance** — Classic floor-trader pivot points (P,
+  S1–S3, R1–R3) and Fibonacci pivot points, computed from the most
+  recent completed trading day.
+
+Both pull full price history directly from PSX (rather than this app's
+own slowly-self-accumulating price-history table), so they work
+immediately for any symbol instead of needing weeks/months of the app
+running first.
+
 ### New: Portfolio CSV import/export
 
 On the Portfolio page, **Export CSV** downloads your current holdings
