@@ -70,6 +70,27 @@ shows results instantly.
 
 This is a technical screen, not investment advice.
 
+### New: Interactive Charts (stock page)
+
+Real candlestick + volume charts (via [Lightweight Charts](https://www.tradingview.com/lightweight-charts/), TradingView's free MIT-licensed charting library), built entirely from actual PSX price history — no placeholder/demo data:
+
+- Candlesticks with a synced volume pane underneath
+- Selectable timeframes: 1M / 3M / 6M / 1Y / 3Y / 5Y / ALL (3Y+ auto-resamples to weekly/monthly bars so old, long-listed stocks stay readable)
+- Toggleable SMA(20/50/200) and EMA(20/50/200) overlays on the price pane
+- Separate RSI(14) and MACD(12/26/9) panels below, synced to the same time scale
+- Support/resistance lines drawn directly on the price chart from the same classic pivot-point math used in the Technical Verdict card
+
+Switching timeframes or toggling indicators never re-hits PSX — everything is computed client-request-time from the same cached full-history fetch described below.
+
+### Performance & reliability fixes (this round)
+
+A few real production issues were found and fixed:
+
+- **Shared, retry-hardened HTTP session** — every PSX/MUFAP request now goes through one connection-pooled `requests.Session()` with automatic retries on connection resets and 5xx/429 responses, instead of a fresh, unprotected connection per call. This was the direct cause of the `RemoteDisconnected`/"Connection aborted" errors under load.
+- **`/api/symbols` no longer blocks** — it used to make a live, synchronous PSX request on every cold start, so the first visitor after a Render free-tier wake-up could get stuck waiting (and failing) on it. It now serves cached (or a small built-in fallback) data instantly and always refreshes in the background, matching the pattern already used for live quotes.
+- **Divergence Screener runs 6 symbols concurrently** instead of one at a time — cuts a full ~700-symbol market scan from many minutes down to a fraction of that.
+- **Mutual Funds NaN/Infinity bug** — a malformed scraped number could silently become `NaN`/`Infinity`, which isn't valid JSON and crashes `response.json()` in the browser. Fixed at the source and backstopped everywhere with a blanket JSON-safety wrapper.
+
 ### New: Consolidated Technical Verdict & Support/Resistance (stock page)
 
 Opening any stock's profile page (from All PSX Stocks, Watchlist,

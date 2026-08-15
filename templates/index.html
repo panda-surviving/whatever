@@ -1641,6 +1641,43 @@
     </div>
 
 
+    <div class="card chart-card">
+      <div class="card-head">
+        <div>
+          <h3>Interactive Chart</h3>
+          <p>Candlesticks with volume, moving averages, RSI and MACD — real PSX price history.</p>
+        </div>
+      </div>
+
+      <div class="chart-toolbar">
+        <div class="chart-timeframe-group" id="chartTimeframeGroup">
+          <button class="chart-tf-btn" data-tf="1M">1M</button>
+          <button class="chart-tf-btn" data-tf="3M">3M</button>
+          <button class="chart-tf-btn" data-tf="6M">6M</button>
+          <button class="chart-tf-btn active" data-tf="1Y">1Y</button>
+          <button class="chart-tf-btn" data-tf="3Y">3Y</button>
+          <button class="chart-tf-btn" data-tf="5Y">5Y</button>
+          <button class="chart-tf-btn" data-tf="ALL">ALL</button>
+        </div>
+        <div class="chart-overlay-group" id="chartOverlayGroup">
+          <label class="chart-toggle"><input type="checkbox" data-overlay="sma20"><span>SMA20</span></label>
+          <label class="chart-toggle"><input type="checkbox" data-overlay="sma50"><span>SMA50</span></label>
+          <label class="chart-toggle"><input type="checkbox" data-overlay="sma200" checked><span>SMA200</span></label>
+          <label class="chart-toggle"><input type="checkbox" data-overlay="ema20"><span>EMA20</span></label>
+          <label class="chart-toggle"><input type="checkbox" data-overlay="ema50" checked><span>EMA50</span></label>
+          <label class="chart-toggle"><input type="checkbox" data-overlay="ema200"><span>EMA200</span></label>
+          <label class="chart-toggle"><input type="checkbox" id="chartShowSR" checked><span>S/R</span></label>
+        </div>
+      </div>
+
+      <p id="chartStatus" class="muted-note"></p>
+      <div id="mainPriceChart" class="main-price-chart"></div>
+      <div id="volumeChart" class="volume-chart"></div>
+      <div id="rsiChart" class="indicator-chart"></div>
+      <div id="macdChart" class="indicator-chart"></div>
+    </div>
+
+
     <div class="card">
       <div class="card-head">
         <div>
@@ -1894,6 +1931,7 @@
 </div>
 
 
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 <script>
 if ('serviceWorker' in navigator) {

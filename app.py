@@ -97,6 +97,40 @@ HEADERS = {
 SYMBOL_CACHE_MINUTES = 60
 QUOTE_CACHE_SECONDS = 120
 
+# Shared, connection-pooled, retry-hardened HTTP session used for every
+# outbound request this app makes to PSX and MUFAP. Reusing one session
+# (instead of a bare `requests.get`/`requests.post` per call) keeps TCP
+# connections alive across requests, which is both faster and much less
+# likely to trigger "Connection aborted"/"Remote end closed connection"
+# errors than opening a brand-new connection for every single symbol.
+# The retry adapter automatically retries transient connection resets
+# and 5xx/429 responses with backoff, instead of failing on the first
+# hiccup — the single biggest source of the intermittent scraping
+# errors this app was seeing under load.
+try:
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    _http_session = requests.Session()
+    _retry_strategy = Retry(
+        total=3,
+        connect=3,
+        read=2,
+        backoff_factor=0.6,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"],
+        raise_on_status=False,
+    )
+    _http_adapter = HTTPAdapter(
+        max_retries=_retry_strategy,
+        pool_connections=30,
+        pool_maxsize=30,
+    )
+    _http_session.mount("https://", _http_adapter)
+    _http_session.mount("http://", _http_adapter)
+except Exception:  # pragma: no cover - fall back to plain requests if urllib3's API ever shifts
+    _http_session = requests
+
 _symbol_cache = {"items": [], "time": None}
 _symbol_lock = threading.Lock()
 
@@ -1506,7 +1540,7 @@ def fetch_psx_symbols(force=False):
         ):
             return _symbol_cache["items"]
 
-    response = requests.get(
+    response = _http_session.get(
         PSX_SYMBOLS_URL,
         headers=HEADERS,
         timeout=20
@@ -1542,6 +1576,56 @@ def fetch_psx_symbols(force=False):
         _symbol_cache["time"] = now
 
     return items
+
+
+def _fallback_symbol_directory():
+    return [
+        {"symbol": s, "company": q.get("company", s), "sector": q.get("sector", "")}
+        for s, q in FALLBACK_QUOTES.items()
+    ]
+
+
+def get_symbols_nonblocking(force=False):
+    """Like fetch_psx_symbols, but never blocks the calling HTTP request
+    on a live PSX fetch. Serves whatever is already cached immediately
+    (even if stale) and refreshes in the background; on a true cold
+    start with nothing cached yet, serves the small built-in fallback
+    directory instantly and kicks a background fetch of the real one —
+    the same "instant fallback, warm in background" pattern already
+    used for bulk live quotes, so the very first visitor after a deploy
+    or free-tier wake-up never gets stuck waiting on PSX's servers.
+
+    Returns (items, warmed_up) where warmed_up is False only when the
+    fallback directory is what's being served.
+    """
+    now = datetime.now()
+    with _symbol_lock:
+        has_items = bool(_symbol_cache["items"])
+        stale = (
+            _symbol_cache["time"] is None
+            or now - _symbol_cache["time"] > timedelta(minutes=SYMBOL_CACHE_MINUTES)
+        )
+        cached_items = list(_symbol_cache["items"])
+
+    if has_items and not (stale or force):
+        return cached_items, True
+
+    if has_items:
+        # Stale (or a forced refresh was requested) but we already have
+        # something to show — serve it now, refresh in the background.
+        threading.Thread(target=_background_refresh_symbols, daemon=True).start()
+        return cached_items, True
+
+    # True cold start: nothing cached at all yet. Never block on PSX here.
+    threading.Thread(target=_background_refresh_symbols, daemon=True).start()
+    return _fallback_symbol_directory(), False
+
+
+def _background_refresh_symbols():
+    try:
+        fetch_psx_symbols(force=True)
+    except requests.RequestException:
+        pass  # will simply retry next time get_symbols_nonblocking is called
 
 
 def symbol_metadata(symbol):
@@ -1704,7 +1788,7 @@ def get_quote(symbol, force=False):
     url = PSX_COMPANY_URL.format(symbol=symbol)
 
     try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
+        response = _http_session.get(url, headers=HEADERS, timeout=15)
         response.raise_for_status()
         quote = parse_company_page(symbol, response.text)
 
@@ -2146,7 +2230,7 @@ def fetch_mufap_funds(force=False):
     directory_by_name = {f["name"].strip().lower(): f for f in MUFAP_FUND_DIRECTORY}
 
     try:
-        response = requests.get(MUFAP_NAV_URL, headers=HEADERS, timeout=20)
+        response = _http_session.get(MUFAP_NAV_URL, headers=HEADERS, timeout=20)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -2661,7 +2745,7 @@ def get_intraday(symbol):
     url = PSX_INTRADAY_URL.format(symbol=symbol.upper())
 
     try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
+        response = _http_session.get(url, headers=HEADERS, timeout=15)
         response.raise_for_status()
         payload = response.json()
         return normalize_timeseries(payload)
@@ -2935,27 +3019,22 @@ def index():
 
 @app.get("/api/symbols")
 def symbols():
-    try:
-        items = fetch_psx_symbols()
-        return jsonify({
-            "count": len(items),
-            "symbols": items,
-            "updated_at": (
-                _symbol_cache["time"].isoformat(timespec="seconds")
-                if _symbol_cache["time"] else None
-            )
-        })
-    except requests.RequestException as exc:
-        return jsonify({"error": str(exc)}), 502
+    items, warmed_up = get_symbols_nonblocking()
+    return jsonify({
+        "count": len(items),
+        "symbols": items,
+        "warming_up": not warmed_up,
+        "updated_at": (
+            _symbol_cache["time"].isoformat(timespec="seconds")
+            if _symbol_cache["time"] else None
+        )
+    })
 
 
 @app.post("/api/symbols/refresh")
 def refresh_symbols():
-    try:
-        items = fetch_psx_symbols(force=True)
-        return jsonify({"ok": True, "count": len(items)})
-    except requests.RequestException as exc:
-        return jsonify({"error": str(exc)}), 502
+    threading.Thread(target=_background_refresh_symbols, daemon=True).start()
+    return jsonify({"ok": True, "message": "Refresh started in the background."})
 
 
 @app.get("/api/stock/<symbol>")
@@ -3878,7 +3957,10 @@ def fetch_yf_ohlc(symbol, interval="30m", period="60d", max_retries=3):
 
 def resample_ohlc(df, rule):
     d = df.set_index("date")
-    out = d.resample(rule).agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last"}
+    if "volume" in d.columns:
+        agg["volume"] = "sum"
+    out = d.resample(rule).agg(agg).dropna(subset=["open", "high", "low", "close"])
     return out.reset_index()
 
 
@@ -4087,7 +4169,7 @@ def fetch_psx_history_direct(symbol, max_retries=3, retry_delays=(1, 2)):
     resp = None
     for attempt in range(max_retries):
         try:
-            resp = requests.post(
+            resp = _http_session.post(
                 PSX_HISTORICAL_URL, data={"symbol": symbol},
                 headers=HEADERS, timeout=25,
             )
@@ -4188,6 +4270,77 @@ def compute_multi_timeframe_divergence(full_df, daily_df):
     return out
 
 
+def _analyze_one_psx_divergence_symbol(symbol, start_date):
+    """Fetches and analyzes a single symbol for the divergence scan.
+    Pulled out into its own function so the scan can run several of
+    these concurrently (see run_psx_divergence_scan) instead of one
+    symbol at a time — the single biggest lever for making a 700+
+    symbol scan finish in a reasonable time on Render's free tier."""
+    try:
+        full_df = fetch_psx_history_direct(symbol)
+        df = full_df if full_df.empty else full_df[full_df["date"] >= pd.Timestamp(start_date)].reset_index(drop=True)
+    except Exception as e:
+        return {"symbol": symbol, "error": str(e)}
+
+    if df is None or df.empty:
+        return {"symbol": symbol, "skip": True}
+
+    if "is_anomaly" in df.columns:
+        df = df[~df["is_anomaly"].astype(bool)].copy()
+
+    if len(df) < PSX_DIVERGENCE_MIN_TRADING_DAYS:
+        return {"symbol": symbol, "skip": True}
+
+    df = df.sort_values("date").reset_index(drop=True)
+    df["date"] = pd.to_datetime(df["date"])
+
+    latest_close = df["close"].iloc[-1]
+
+    one_year_ago = df["date"].iloc[-1] - pd.Timedelta(days=365)
+    last_year = df[df["date"] >= one_year_ago]
+    if last_year.empty:
+        return {"symbol": symbol, "skip": True}
+
+    low_col = "low" if (PSX_DIVERGENCE_PRICE_BASIS == "low" and "low" in df.columns) else "close"
+    low_52w = last_year[low_col].min()
+    pct_above_low = (latest_close - low_52w) / low_52w * 100
+    is_near_low = pct_above_low <= PSX_DIVERGENCE_NEAR_LOW_PCT
+
+    df["rsi"] = core.compute_rsi(df["close"], core.RSI_PERIOD)
+
+    multi_tf = compute_multi_timeframe_divergence(full_df, df)
+
+    def _tf_label(tf):
+        return (tf["type"].capitalize() if tf else "—")
+
+    base_info = {
+        "symbol": symbol,
+        "latest_close": round(float(latest_close), 2),
+        "week52_low": round(float(low_52w), 2),
+        "pct_above_52w_low": round(float(pct_above_low), 2),
+        "latest_rsi": round(float(df["rsi"].iloc[-1]), 1),
+        "div_1d": _tf_label(multi_tf["div_1d"]),
+        "div_1w": _tf_label(multi_tf["div_1w"]),
+        "div_1m": _tf_label(multi_tf["div_1m"]),
+    }
+
+    bullish = core.check_bullish_divergence(df, PSX_DIVERGENCE_LOOKBACK_DAYS, PSX_DIVERGENCE_SWING_ORDER)
+    bearish = core.check_bearish_divergence(df, PSX_DIVERGENCE_LOOKBACK_DAYS, PSX_DIVERGENCE_SWING_ORDER)
+    structure = core.classify_structure(df, PSX_STRUCTURE_LOOKBACK_DAYS, PSX_STRUCTURE_SWING_ORDER)
+
+    return {
+        "symbol": symbol,
+        "base_info": base_info,
+        "is_near_low": is_near_low,
+        "bullish": bullish,
+        "bearish": bearish,
+        "structure": structure,
+    }
+
+
+PSX_DIVERGENCE_SCAN_WORKERS = 6
+
+
 def run_psx_divergence_scan(progress_cb=None):
     """Market-wide PSX scan: near-52-week-low, bullish/bearish RSI
     divergence, and trend structure, for every listed symbol. Returns a
@@ -4197,7 +4350,14 @@ def run_psx_divergence_scan(progress_cb=None):
     Also checks each stock's RSI divergence independently on daily,
     weekly and monthly bars (the 1D/1W/1M columns) — a stock can show
     divergence on one timeframe and not another, which is exactly the
-    kind of thing this extra view is meant to surface."""
+    kind of thing this extra view is meant to surface.
+
+    Runs several symbols concurrently (PSX_DIVERGENCE_SCAN_WORKERS) over
+    the shared, connection-pooled, retry-hardened HTTP session, instead
+    of one symbol at a time — a full market scan that used to take
+    15-30+ minutes strictly sequentially now takes a fraction of that."""
+    import concurrent.futures
+
     tickers = [s["symbol"] for s in fetch_psx_symbols()]
     if not tickers:
         raise RuntimeError("PSX did not return a symbol list (site may be unreachable right now).")
@@ -4210,101 +4370,52 @@ def run_psx_divergence_scan(progress_cb=None):
     errors = []
 
     total = len(tickers)
-    for i, symbol in enumerate(tickers, 1):
-        try:
-            full_df = fetch_psx_history_direct(symbol)
-            df = full_df if full_df.empty else full_df[full_df["date"] >= pd.Timestamp(start_date)].reset_index(drop=True)
-        except Exception as e:
-            errors.append({"symbol": symbol, "error": str(e)})
+    done = 0
+    done_lock = threading.Lock()
+
+    def worker(symbol):
+        nonlocal done
+        result = _analyze_one_psx_divergence_symbol(symbol, start_date)
+        with done_lock:
+            done += 1
             if progress_cb:
-                progress_cb(i, total, symbol)
-            time.sleep(PSX_DIVERGENCE_REQUEST_DELAY)
-            continue
+                progress_cb(done, total, symbol)
+        return result
 
-        if df is None or df.empty:
-            if progress_cb:
-                progress_cb(i, total, symbol)
-            time.sleep(PSX_DIVERGENCE_REQUEST_DELAY)
-            continue
+    with concurrent.futures.ThreadPoolExecutor(max_workers=PSX_DIVERGENCE_SCAN_WORKERS) as pool:
+        for result in pool.map(worker, tickers):
+            if result.get("error"):
+                errors.append({"symbol": result["symbol"], "error": result["error"]})
+                continue
+            if result.get("skip"):
+                continue
 
-        if "is_anomaly" in df.columns:
-            df = df[~df["is_anomaly"].astype(bool)].copy()
+            base_info = result["base_info"]
+            bullish, bearish, structure = result["bullish"], result["bearish"], result["structure"]
 
-        if len(df) < PSX_DIVERGENCE_MIN_TRADING_DAYS:
-            if progress_cb:
-                progress_cb(i, total, symbol)
-            time.sleep(PSX_DIVERGENCE_REQUEST_DELAY)
-            continue
-
-        df = df.sort_values("date").reset_index(drop=True)
-        df["date"] = pd.to_datetime(df["date"])
-
-        latest_close = df["close"].iloc[-1]
-
-        one_year_ago = df["date"].iloc[-1] - pd.Timedelta(days=365)
-        last_year = df[df["date"] >= one_year_ago]
-        if last_year.empty:
-            if progress_cb:
-                progress_cb(i, total, symbol)
-            time.sleep(PSX_DIVERGENCE_REQUEST_DELAY)
-            continue
-
-        low_col = "low" if (PSX_DIVERGENCE_PRICE_BASIS == "low" and "low" in df.columns) else "close"
-        low_52w = last_year[low_col].min()
-        pct_above_low = (latest_close - low_52w) / low_52w * 100
-        is_near_low = pct_above_low <= PSX_DIVERGENCE_NEAR_LOW_PCT
-
-        df["rsi"] = core.compute_rsi(df["close"], core.RSI_PERIOD)
-
-        multi_tf = compute_multi_timeframe_divergence(full_df, df)
-
-        def _tf_label(tf):
-            return (tf["type"].capitalize() if tf else "—")
-
-        base_info = {
-            "symbol": symbol,
-            "latest_close": round(float(latest_close), 2),
-            "week52_low": round(float(low_52w), 2),
-            "pct_above_52w_low": round(float(pct_above_low), 2),
-            "latest_rsi": round(float(df["rsi"].iloc[-1]), 1),
-            "div_1d": _tf_label(multi_tf["div_1d"]),
-            "div_1w": _tf_label(multi_tf["div_1w"]),
-            "div_1m": _tf_label(multi_tf["div_1m"]),
-        }
-
-        if is_near_low:
-            near_low_hits.append(dict(base_info))
-
-        bullish = core.check_bullish_divergence(df, PSX_DIVERGENCE_LOOKBACK_DAYS, PSX_DIVERGENCE_SWING_ORDER)
-        bearish = core.check_bearish_divergence(df, PSX_DIVERGENCE_LOOKBACK_DAYS, PSX_DIVERGENCE_SWING_ORDER)
-        structure = core.classify_structure(df, PSX_STRUCTURE_LOOKBACK_DAYS, PSX_STRUCTURE_SWING_ORDER)
-
-        if is_near_low and bullish:
-
-            hit = dict(base_info); hit.update(bullish)
-            divergence_hits.append(hit)
-        if bullish:
-            hit = dict(base_info); hit.update(bullish)
-            bullish_all_hits.append(hit)
-        if bearish:
-            hit = dict(base_info); hit.update(bearish)
-            bearish_all_hits.append(hit)
-        if bullish and structure == "uptrend":
-            hit = dict(base_info); hit["divergence_type"] = "bullish"; hit.update(bullish)
-            uptrend_hits.append(hit)
-        if bearish and structure == "uptrend":
-            hit = dict(base_info); hit["divergence_type"] = "bearish"; hit.update(bearish)
-            uptrend_hits.append(hit)
-        if bullish and structure == "downtrend":
-            hit = dict(base_info); hit["divergence_type"] = "bullish"; hit.update(bullish)
-            downtrend_hits.append(hit)
-        if bearish and structure == "downtrend":
-            hit = dict(base_info); hit["divergence_type"] = "bearish"; hit.update(bearish)
-            downtrend_hits.append(hit)
-
-        if progress_cb:
-            progress_cb(i, total, symbol)
-        time.sleep(PSX_DIVERGENCE_REQUEST_DELAY)
+            if result["is_near_low"]:
+                near_low_hits.append(dict(base_info))
+            if result["is_near_low"] and bullish:
+                hit = dict(base_info); hit.update(bullish)
+                divergence_hits.append(hit)
+            if bullish:
+                hit = dict(base_info); hit.update(bullish)
+                bullish_all_hits.append(hit)
+            if bearish:
+                hit = dict(base_info); hit.update(bearish)
+                bearish_all_hits.append(hit)
+            if bullish and structure == "uptrend":
+                hit = dict(base_info); hit["divergence_type"] = "bullish"; hit.update(bullish)
+                uptrend_hits.append(hit)
+            if bearish and structure == "uptrend":
+                hit = dict(base_info); hit["divergence_type"] = "bearish"; hit.update(bearish)
+                uptrend_hits.append(hit)
+            if bullish and structure == "downtrend":
+                hit = dict(base_info); hit["divergence_type"] = "bullish"; hit.update(bullish)
+                downtrend_hits.append(hit)
+            if bearish and structure == "downtrend":
+                hit = dict(base_info); hit["divergence_type"] = "bearish"; hit.update(bearish)
+                downtrend_hits.append(hit)
 
     def sort_hits(hits, key="pct_above_52w_low"):
         return sorted(hits, key=lambda h: h.get(key, 0))
@@ -4610,6 +4721,142 @@ def stock_verdict(symbol):
     except Exception as e:
         return safe_jsonify({"available": False, "symbol": symbol.upper(), "note": f"Could not compute: {e}"}), 200
     return safe_jsonify(result)
+
+
+# =====================================================================
+# INTERACTIVE STOCK CHART — candlesticks, volume, SMA/EMA overlays,
+# RSI/MACD panels, support & resistance (new)
+# =====================================================================
+# Reuses the same cached full-history fetch as the Verdict feature
+# (get_full_history_cached, 30-min in-memory TTL) so switching
+# timeframes on the chart never triggers a fresh PSX request — only the
+# very first chart open for a symbol (or the first one in 30 minutes)
+# touches the network, everything else (timeframe switches, indicator
+# toggles) is served from the already-fetched DataFrame.
+
+CHART_TIMEFRAME_CONFIG = {
+    "1M": {"days": 35, "resample": None},
+    "3M": {"days": 95, "resample": None},
+    "6M": {"days": 190, "resample": None},
+    "1Y": {"days": 370, "resample": None},
+    "3Y": {"days": 370 * 3, "resample": "W"},
+    "5Y": {"days": 370 * 5, "resample": "W"},
+    "ALL": {"days": None, "resample": "ME"},
+}
+CHART_MIN_CANDLES = 5
+
+
+def _series_to_points(dates, series):
+    points = []
+    for d, v in zip(dates, series):
+        if pd.isna(v):
+            continue
+        t = d.date().isoformat() if hasattr(d, "date") else str(d)
+        points.append({"time": t, "value": round(float(v), 4)})
+    return points
+
+
+def compute_chart_indicator_series(df):
+    """Full SMA/EMA(20/50/200), RSI(14) and MACD(12,26,9) series for
+    whatever timeframe df represents — computed on that timeframe's own
+    bars (so "SMA50" on a weekly chart is 50 weekly periods), which is
+    standard charting-tool behavior and keeps every number on a chart
+    consistent with the candles it's drawn over."""
+    closes = df["close"]
+    out = {}
+
+    for n in (20, 50, 200):
+        sma = closes.rolling(n).mean()
+        out[f"sma{n}"] = _series_to_points(df["date"], sma)
+        ema = closes.ewm(span=n, adjust=False).mean()
+        out[f"ema{n}"] = _series_to_points(df["date"], ema)
+
+    rsi = core.compute_rsi(closes, 14)
+    out["rsi14"] = _series_to_points(df["date"], rsi)
+
+    ema12 = closes.ewm(span=12, adjust=False).mean()
+    ema26 = closes.ewm(span=26, adjust=False).mean()
+    macd_line = ema12 - ema26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    hist = macd_line - signal_line
+    out["macd"] = _series_to_points(df["date"], macd_line)
+    out["macd_signal"] = _series_to_points(df["date"], signal_line)
+    out["macd_hist"] = _series_to_points(df["date"], hist)
+
+    return out
+
+
+def _ohlc_to_candles_and_volume(df):
+    candles, volume = [], []
+    has_volume = "volume" in df.columns
+    for row in df.itertuples(index=False):
+        d = getattr(row, "date")
+        t = d.date().isoformat() if hasattr(d, "date") else str(d)
+        o, h, l, c = float(row.open), float(row.high), float(row.low), float(row.close)
+        candles.append({"time": t, "open": round(o, 2), "high": round(h, 2), "low": round(l, 2), "close": round(c, 2)})
+        if has_volume:
+            v = getattr(row, "volume", None)
+            volume.append({
+                "time": t,
+                "value": float(v) if pd.notna(v) else 0,
+                "color": "#1FA45C" if c >= o else "#DC5050",
+            })
+    return candles, volume
+
+
+@app.get("/api/stock/<symbol>/chart")
+def stock_chart(symbol):
+    guard = _technicals_guard()
+    if guard:
+        return guard
+
+    timeframe = request.args.get("timeframe", "1Y").upper()
+    cfg = CHART_TIMEFRAME_CONFIG.get(timeframe, CHART_TIMEFRAME_CONFIG["1Y"])
+
+    try:
+        full_df = get_full_history_cached(symbol)
+    except Exception as e:
+        return safe_jsonify({"available": False, "symbol": symbol.upper(), "note": f"Could not load chart data: {e}"})
+
+    if full_df is None or full_df.empty:
+        return safe_jsonify({"available": False, "symbol": symbol.upper(), "note": "No price history is available for this symbol from PSX."})
+
+    full_df = full_df.sort_values("date").reset_index(drop=True)
+
+    # Support/resistance is always based on the most recent actual daily
+    # bar, regardless of which timeframe the chart itself is showing.
+    last_row = full_df.iloc[-1]
+    pivot_high = float(last_row["high"]) if "high" in full_df.columns and pd.notna(last_row["high"]) else float(last_row["close"])
+    pivot_low = float(last_row["low"]) if "low" in full_df.columns and pd.notna(last_row["low"]) else float(last_row["close"])
+    pivot_close = float(last_row["close"])
+
+    if cfg["days"] is not None:
+        cutoff = full_df["date"].iloc[-1] - pd.Timedelta(days=cfg["days"])
+        windowed = full_df[full_df["date"] >= cutoff].reset_index(drop=True)
+    else:
+        windowed = full_df
+
+    chart_df = resample_ohlc(windowed, cfg["resample"]) if cfg["resample"] else windowed
+
+    if chart_df is None or chart_df.empty or len(chart_df) < CHART_MIN_CANDLES:
+        return safe_jsonify({"available": False, "symbol": symbol.upper(), "note": "Not enough price history for this timeframe yet."})
+
+    candles, volume = _ohlc_to_candles_and_volume(chart_df)
+    indicators = compute_chart_indicator_series(chart_df)
+
+    return safe_jsonify({
+        "available": True,
+        "symbol": symbol.upper(),
+        "timeframe": timeframe,
+        "candles": candles,
+        "volume": volume,
+        "indicators": indicators,
+        "pivot_points": {
+            "classic": compute_pivot_points(pivot_high, pivot_low, pivot_close),
+            "fibonacci": compute_fibonacci_pivot_points(pivot_high, pivot_low, pivot_close),
+            "basis_date": last_row["date"].date().isoformat() if pd.notna(last_row["date"]) else None,
+        },
+    })
 
 
 # =====================================================================

@@ -1232,6 +1232,8 @@ async function openStock(symbol) {
 
   loadFundamentals(symbol);
   loadTechnicalVerdict(symbol);
+  document.querySelectorAll(".chart-tf-btn").forEach(b => b.classList.toggle("active", b.dataset.tf === "1Y"));
+  loadStockChart(symbol, "1Y");
 }
 
 async function loadTechnicalVerdict(symbol) {
@@ -3844,3 +3846,188 @@ $("psxDivergenceRunBtn")?.addEventListener("click", runPsxDivergenceScan);
 // quotes are ready, instead of never appearing until a manual refresh.
 // =====================================================================
 setInterval(() => { loadDashboardTickers(); }, 60000);
+
+// =====================================================================
+// Interactive Stock Chart — candlesticks, volume, SMA/EMA overlays,
+// RSI & MACD panels, support/resistance (Lightweight Charts, new)
+// =====================================================================
+
+let priceChart = null, volumeChartInstance = null, rsiChartInstance = null, macdChartInstance = null;
+let candleSeries = null, volumeSeries = null, rsiSeries = null, macdLineSeries = null, macdSignalSeries = null, macdHistSeries = null;
+let overlaySeriesMap = {};
+let srPriceLines = [];
+let currentChartSymbol = null;
+let currentChartTimeframe = "1Y";
+let lastChartData = null;
+
+const CHART_COLORS = {
+  up: "#1FA45C", down: "#DC5050", grid: "#E6E9F5", text: "#6B7385",
+  sma20: "#8E6FCE", sma50: "#3E8EDE", sma200: "#C0392B",
+  ema20: "#E0A62F", ema50: "#2FA9A0", ema200: "#B5651D",
+  rsi: "#8E6FCE", macd: "#3E8EDE", signal: "#E0A62F",
+};
+
+function chartBaseOptions(el) {
+  return {
+    width: el.clientWidth || 300,
+    height: el.clientHeight || 100,
+    layout: { background: { color: "transparent" }, textColor: CHART_COLORS.text, fontFamily: "inherit" },
+    grid: { vertLines: { color: CHART_COLORS.grid }, horzLines: { color: CHART_COLORS.grid } },
+    rightPriceScale: { borderColor: CHART_COLORS.grid },
+    timeScale: { borderColor: CHART_COLORS.grid },
+    crosshair: { mode: 0 },
+  };
+}
+
+function destroyStockCharts() {
+  [priceChart, volumeChartInstance, rsiChartInstance, macdChartInstance].forEach(c => {
+    if (c) { try { c.remove(); } catch (e) { /* already gone */ } }
+  });
+  priceChart = volumeChartInstance = rsiChartInstance = macdChartInstance = null;
+  candleSeries = volumeSeries = rsiSeries = macdLineSeries = macdSignalSeries = macdHistSeries = null;
+  overlaySeriesMap = {};
+  srPriceLines = [];
+}
+
+async function loadStockChart(symbol, timeframe) {
+  currentChartSymbol = symbol;
+  currentChartTimeframe = timeframe || currentChartTimeframe;
+  const statusEl = $("chartStatus");
+  if (!statusEl) return; // chart card not on this page
+  statusEl.textContent = "Loading chart…";
+
+  try {
+    const d = await getJSON(`/api/stock/${encodeURIComponent(symbol)}/chart?timeframe=${encodeURIComponent(currentChartTimeframe)}`);
+    if (!d.available) {
+      statusEl.textContent = d.note || "Chart data is not available for this symbol yet.";
+      destroyStockCharts();
+      ["mainPriceChart", "volumeChart", "rsiChart", "macdChart"].forEach(id => { if ($(id)) $(id).innerHTML = ""; });
+      return;
+    }
+    statusEl.textContent = "";
+    lastChartData = d;
+    renderStockChart(d);
+  } catch (error) {
+    statusEl.textContent = "Could not load chart: " + error.message;
+  }
+}
+
+function renderStockChart(d) {
+  if (typeof LightweightCharts === "undefined") {
+    $("chartStatus").textContent = "Chart library failed to load (check your connection and reload).";
+    return;
+  }
+
+  destroyStockCharts();
+
+  const priceEl = $("mainPriceChart"), volEl = $("volumeChart"), rsiEl = $("rsiChart"), macdEl = $("macdChart");
+  if (!priceEl) return;
+
+  priceChart = LightweightCharts.createChart(priceEl, chartBaseOptions(priceEl));
+  candleSeries = priceChart.addCandlestickSeries({
+    upColor: CHART_COLORS.up, downColor: CHART_COLORS.down,
+    borderUpColor: CHART_COLORS.up, borderDownColor: CHART_COLORS.down,
+    wickUpColor: CHART_COLORS.up, wickDownColor: CHART_COLORS.down,
+  });
+  candleSeries.setData(d.candles);
+
+  volumeChartInstance = LightweightCharts.createChart(volEl, chartBaseOptions(volEl));
+  volumeSeries = volumeChartInstance.addHistogramSeries({ priceFormat: { type: "volume" }, color: CHART_COLORS.up });
+  volumeSeries.setData(d.volume);
+
+  rsiChartInstance = LightweightCharts.createChart(rsiEl, chartBaseOptions(rsiEl));
+  rsiSeries = rsiChartInstance.addLineSeries({ color: CHART_COLORS.rsi, lineWidth: 2 });
+  rsiSeries.setData(d.indicators.rsi14 || []);
+  rsiSeries.createPriceLine({ price: 70, color: CHART_COLORS.down, lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: "70" });
+  rsiSeries.createPriceLine({ price: 30, color: CHART_COLORS.up, lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: "30" });
+
+  macdChartInstance = LightweightCharts.createChart(macdEl, chartBaseOptions(macdEl));
+  macdHistSeries = macdChartInstance.addHistogramSeries({});
+  macdHistSeries.setData((d.indicators.macd_hist || []).map(p => ({ time: p.time, value: p.value, color: p.value >= 0 ? CHART_COLORS.up : CHART_COLORS.down })));
+  macdLineSeries = macdChartInstance.addLineSeries({ color: CHART_COLORS.macd, lineWidth: 2 });
+  macdLineSeries.setData(d.indicators.macd || []);
+  macdSignalSeries = macdChartInstance.addLineSeries({ color: CHART_COLORS.signal, lineWidth: 1 });
+  macdSignalSeries.setData(d.indicators.macd_signal || []);
+
+  applyChartOverlayToggles();
+  applyChartSRToggle();
+
+  // Keep all four panes scrolling/zooming together.
+  const charts = [priceChart, volumeChartInstance, rsiChartInstance, macdChartInstance];
+  charts.forEach(c => {
+    c.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      if (!range) return;
+      charts.forEach(other => {
+        if (other !== c) { try { other.timeScale().setVisibleLogicalRange(range); } catch (e) {} }
+      });
+    });
+  });
+}
+
+function applyChartOverlayToggles() {
+  if (!lastChartData || !candleSeries || !priceChart) return;
+  const overlayKeys = ["sma20", "sma50", "sma200", "ema20", "ema50", "ema200"];
+  overlayKeys.forEach(key => {
+    const checkbox = document.querySelector(`[data-overlay="${key}"]`);
+    const wanted = !!(checkbox && checkbox.checked);
+    const existing = overlaySeriesMap[key];
+    if (wanted && !existing) {
+      const series = priceChart.addLineSeries({ color: CHART_COLORS[key], lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+      series.setData(lastChartData.indicators[key] || []);
+      overlaySeriesMap[key] = series;
+    } else if (!wanted && existing) {
+      priceChart.removeSeries(existing);
+      delete overlaySeriesMap[key];
+    }
+  });
+}
+
+function applyChartSRToggle() {
+  if (!candleSeries) return;
+  srPriceLines.forEach(line => { try { candleSeries.removePriceLine(line); } catch (e) {} });
+  srPriceLines = [];
+
+  const show = $("chartShowSR")?.checked;
+  if (!show || !lastChartData || !lastChartData.pivot_points) return;
+
+  const cls = lastChartData.pivot_points.classic;
+  const levels = [
+    { price: cls.r3, title: "R3", color: CHART_COLORS.down },
+    { price: cls.r2, title: "R2", color: CHART_COLORS.down },
+    { price: cls.r1, title: "R1", color: CHART_COLORS.down },
+    { price: cls.pivot, title: "P", color: CHART_COLORS.text },
+    { price: cls.s1, title: "S1", color: CHART_COLORS.up },
+    { price: cls.s2, title: "S2", color: CHART_COLORS.up },
+    { price: cls.s3, title: "S3", color: CHART_COLORS.up },
+  ];
+  levels.forEach(lv => {
+    if (lv.price == null) return;
+    srPriceLines.push(candleSeries.createPriceLine({
+      price: lv.price, color: lv.color, lineWidth: 1, lineStyle: 2,
+      axisLabelVisible: true, title: lv.title,
+    }));
+  });
+}
+
+$("chartTimeframeGroup")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".chart-tf-btn");
+  if (!btn || !currentChartSymbol) return;
+  document.querySelectorAll(".chart-tf-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  loadStockChart(currentChartSymbol, btn.dataset.tf);
+});
+
+$("chartOverlayGroup")?.addEventListener("change", (e) => {
+  if (e.target.matches("[data-overlay]")) applyChartOverlayToggles();
+  if (e.target.id === "chartShowSR") applyChartSRToggle();
+});
+
+window.addEventListener("resize", () => {
+  const pairs = [
+    [priceChart, "mainPriceChart"], [volumeChartInstance, "volumeChart"],
+    [rsiChartInstance, "rsiChart"], [macdChartInstance, "macdChart"],
+  ];
+  pairs.forEach(([chart, id]) => {
+    if (chart && $(id)) { try { chart.applyOptions({ width: $(id).clientWidth }); } catch (e) {} }
+  });
+});
